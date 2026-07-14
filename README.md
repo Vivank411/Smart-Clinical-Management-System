@@ -494,22 +494,6 @@ This system provides:
 - Modular Design
 - Scalable Architecture
 
----
-
-# 👨‍💻 Developer
-
-**Vivank Tyagi**
-
-B.Tech Electrical Engineering (Computer Science Specialization)
-
-Dayalbagh Educational Institute, Agra
-
-### Connect
-
-- GitHub: https://github.com/Vivank411
-- LinkedIn: https://linkedin.com/in/vivank-tyagi-81907127b
-
----
 
 # 📄 License
 
