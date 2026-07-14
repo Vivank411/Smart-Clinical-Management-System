@@ -431,6 +431,22 @@ http://localhost:8000/docs
 
 ---
 
+---
+
+# 👨‍💻 Developer
+
+**Vivank Tyagi**
+
+B.Tech Electrical Engineering (Computer Science Specialization)
+
+Dayalbagh Educational Institute, Agra
+
+**Gagan Singh**
+B.Tech Electrical Engineering (Computer Science Specialization)
+
+Dayalbagh Educational Institute, Agr
+
+
 # 📊 Key Functionalities
 
 - Secure Authentication
