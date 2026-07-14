@@ -1,0 +1,280 @@
+<div class="dpr-shell">
+
+  <!-- ── Left Panel: Patient List ───────────────────────────── -->
+  <aside class="dpr-sidebar">
+    <div class="dpr-sidebar-header">
+      <h2 class="dpr-sidebar-title">Patient Records</h2>
+      <span class="dpr-count">{{ patients.length }}</span>
+    </div>
+
+    <!-- Search -->
+    <div class="dpr-search-wrap">
+      <i class="pi pi-search dpr-search-icon"></i>
+      <input class="dpr-search-input" type="text" placeholder="Search name or mobile…"
+        [(ngModel)]="searchQuery" (input)="onSearch()"/>
+      @if (searchQuery) {
+        <button class="dpr-search-clear" (click)="clearSearch()"><i class="pi pi-times"></i></button>
+      }
+    </div>
+
+    <!-- List -->
+    <div class="dpr-pt-list">
+      @if (isLoadingList) {
+        <div class="dpr-list-empty">
+          <i class="pi pi-spin pi-spinner"></i>
+          <span>Loading…</span>
+        </div>
+      } @else if (patients.length === 0) {
+        <div class="dpr-list-empty">
+          <i class="pi pi-inbox"></i>
+          <p>No prescribed patients</p>
+          <span>Patients appear here after e-prescription is saved</span>
+        </div>
+      } @else {
+        @for (p of patients; track p.id) {
+          <button class="dpr-pt-card" [class.dpr-pt-card--active]="selectedPatient?.id === p.id" (click)="selectPatient(p)">
+            <div class="dpr-pt-av">{{ initials(p.name) }}</div>
+            <div class="dpr-pt-info">
+              <p class="dpr-pt-name">{{ p.name }}</p>
+              <p class="dpr-pt-meta">{{ p.patientId }} · {{ p.age }}Y / {{ p.gender }}</p>
+              <p class="dpr-pt-visit">
+                <i class="pi pi-calendar"></i> {{ getVisitDate(p) }}
+                @if (p.checkinTime) { <span class="dpr-pt-visit-time">at {{ p.checkinTime }}</span> }
+              </p>
+            </div>
+            <span class="dpr-pt-completed"><i class="pi pi-check-circle"></i></span>
+          </button>
+        }
+      }
+    </div>
+  </aside>
+
+  <!-- ── Right Panel: Record Detail ─────────────────────────── -->
+  <main class="dpr-main">
+
+    @if (!selectedPatient && !isLoadingDetail) {
+      <div class="dpr-placeholder">
+        <i class="pi pi-folder-open"></i>
+        <h3>Select a Patient</h3>
+        <p>Choose a prescribed patient from the list to view their complete record</p>
+      </div>
+
+    } @else if (isLoadingDetail) {
+      <div class="dpr-placeholder">
+        <i class="pi pi-spin pi-spinner"></i>
+        <span>Loading record…</span>
+      </div>
+
+    } @else if (selectedPatient) {
+
+      <div class="dpr-record">
+
+        <!-- Patient Header -->
+        <div class="dpr-rec-header">
+          <div class="dpr-rec-av">{{ initials(selectedPatient.name) }}</div>
+          <div class="dpr-rec-info">
+            <div class="dpr-rec-name-row">
+              <h2 class="dpr-rec-name">{{ selectedPatient.name }}</h2>
+              <span class="dpr-rec-pid">{{ selectedPatient.patientId }}</span>
+              <span class="dpr-rec-status">Completed</span>
+            </div>
+            <div class="dpr-rec-meta">
+              <span>{{ selectedPatient.age }} yrs / {{ selectedPatient.gender }}</span>
+              @if (selectedPatient.mobileNumber) { <span class="dpr-meta-sep">·</span><span>{{ selectedPatient.mobileNumber }}</span> }
+              @if (selectedPatient.doctor) { <span class="dpr-meta-sep">·</span><i class="pi pi-user-md"></i><span>{{ selectedPatient.doctor }}</span> }
+            </div>
+            <div class="dpr-rec-visit">
+              <i class="pi pi-calendar-clock"></i>
+              Last Visit: <strong>{{ lastVisitDisplay }}</strong>
+              @if (selectedPatient.checkinTime) {
+                <span class="dpr-visit-sep">·</span>
+                <i class="pi pi-clock"></i> Check-in at <strong>{{ selectedPatient.checkinTime }}</strong>
+              }
+            </div>
+          </div>
+        </div>
+
+        <!-- Allergy Alert -->
+        @if (allergyList.length) {
+          <div class="dpr-allergy-bar">
+            <i class="pi pi-exclamation-triangle"></i>
+            <strong>Allergy Alert:</strong>
+            @for (a of allergyList; track a) { <span class="dpr-allergy-tag">{{ a }}</span> }
+          </div>
+        }
+
+        <!-- ── Clinical Summary ── -->
+        @if (consultData?.symptoms?.length || consultData?.diagnosis || vitalsEntries.length || consultData?.notes) {
+          <div class="dpr-section">
+            <h3 class="dpr-section-title"><i class="pi pi-heart-fill"></i> Clinical Summary</h3>
+            <div class="dpr-consult-layout">
+              <div class="dpr-consult-left">
+                @if (consultData?.symptoms?.length) {
+                  <div class="dpr-consult-item">
+                    <span class="dpr-lbl">Chief Complaints</span>
+                    <div class="dpr-chips">
+                      @for (s of consultData!.symptoms!; track s) {
+                        <span class="dpr-chip dpr-chip--teal">{{ s }}</span>
+                      }
+                    </div>
+                  </div>
+                }
+                @if (consultData?.diagnosis) {
+                  <div class="dpr-consult-item">
+                    <span class="dpr-lbl">Diagnosis</span>
+                    <span class="dpr-val dpr-val--bold">{{ consultData!.diagnosis }}</span>
+                  </div>
+                }
+                @if (consultData?.notes) {
+                  <div class="dpr-consult-item">
+                    <span class="dpr-lbl">Clinical Notes</span>
+                    <span class="dpr-val">{{ consultData!.notes }}</span>
+                  </div>
+                }
+              </div>
+              @if (vitalsEntries.length) {
+                <div class="dpr-consult-right">
+                  <span class="dpr-lbl">Vitals</span>
+                  <div class="dpr-vitals-grid">
+                    @for (v of vitalsEntries; track v.label) {
+                      <div class="dpr-vital-pill">
+                        <span>{{ v.label }}</span>
+                        <strong>{{ v.value }}</strong>
+                      </div>
+                    }
+                  </div>
+                </div>
+              }
+            </div>
+          </div>
+        }
+
+        <!-- ── Prescription ── -->
+        @if (latestPrescription) {
+          <div class="dpr-section">
+            <h3 class="dpr-section-title">
+              <i class="pi pi-file-edit"></i> Prescription
+              <span class="dpr-rx-date">{{ formatDate(latestPrescription.prescriptionDate) }}</span>
+              @if (latestPrescription.doctorName) {
+                <span class="dpr-rx-doc">· {{ latestPrescription.doctorName }}</span>
+              }
+            </h3>
+
+            <table class="dpr-rx-table">
+              <thead>
+                <tr>
+                  <th class="col-n">#</th>
+                  <th class="col-m">Medicine</th>
+                  <th class="col-d">Dosage</th>
+                  <th class="col-f">Frequency</th>
+                  <th class="col-u">Duration</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (med of latestPrescription.medications; track med.name; let i = $index) {
+                  <tr>
+                    <td class="dpr-rx-num">{{ i + 1 }}</td>
+                    <td class="dpr-rx-medname">{{ med.name }}</td>
+                    <td>{{ med.dosage || '—' }}</td>
+                    <td>{{ med.frequency }}</td>
+                    <td>{{ med.duration || '—' }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+
+            @if (latestPrescription.notes) {
+              <div class="dpr-rx-notes">
+                <i class="pi pi-info-circle"></i> {{ latestPrescription.notes }}
+              </div>
+            }
+          </div>
+
+          <!-- Multiple prescriptions indicator -->
+          @if (prescriptions.length > 1) {
+            <div class="dpr-rx-history-note">
+              <i class="pi pi-history"></i> {{ prescriptions.length - 1 }} earlier prescription{{ prescriptions.length > 2 ? 's' : '' }} on record
+            </div>
+          }
+        } @else {
+          <div class="dpr-section dpr-no-rx">
+            <i class="pi pi-file-edit"></i>
+            <span>No prescription on file</span>
+          </div>
+        }
+
+        <!-- ── Clinical Images ── -->
+        @if (clinicalImages.length) {
+          <div class="dpr-section">
+            <h3 class="dpr-section-title">
+              <i class="pi pi-images"></i> Clinical Images
+              <span class="dpr-img-count">{{ clinicalImages.length }}</span>
+            </h3>
+            <div class="dpr-img-grid">
+              @for (img of clinicalImages; track img.name) {
+                <div class="dpr-img-thumb" (click)="zoomedImage = img.url" title="Click to zoom">
+                  <img [src]="img.url" [alt]="img.name"/>
+                  @if (img.annotated) {
+                    <span class="dpr-img-badge"><i class="pi pi-pencil"></i></span>
+                  }
+                </div>
+              }
+            </div>
+          </div>
+        }
+
+        <!-- ── Visit Info ── -->
+        @if (selectedPatient.checkinTime || selectedPatient.reasonForVisit) {
+          <div class="dpr-section">
+            <h3 class="dpr-section-title"><i class="pi pi-calendar"></i> Visit Information</h3>
+            <div class="dpr-info-grid">
+              @if (selectedPatient.queueToken) {
+                <div class="dpr-info-item">
+                  <span class="dpr-lbl">Token</span>
+                  <span class="dpr-val dpr-val--token">{{ selectedPatient.queueToken }}</span>
+                </div>
+              }
+              @if (selectedPatient.checkinTime) {
+                <div class="dpr-info-item">
+                  <span class="dpr-lbl">Check-In Time</span>
+                  <span class="dpr-val">{{ selectedPatient.checkinTime }}</span>
+                </div>
+              }
+              @if (selectedPatient.dob) {
+                <div class="dpr-info-item">
+                  <span class="dpr-lbl">Date of Birth</span>
+                  <span class="dpr-val">{{ formatDob(selectedPatient.dob) }}</span>
+                </div>
+              }
+              @if (selectedPatient.insuranceCompany) {
+                <div class="dpr-info-item">
+                  <span class="dpr-lbl">Insurance</span>
+                  <span class="dpr-val">{{ selectedPatient.insuranceCompany }}</span>
+                </div>
+              }
+              @if (selectedPatient.reasonForVisit) {
+                <div class="dpr-info-item dpr-info-item--full">
+                  <span class="dpr-lbl">Reason for Visit</span>
+                  <span class="dpr-val">{{ selectedPatient.reasonForVisit }}</span>
+                </div>
+              }
+            </div>
+          </div>
+        }
+
+      </div><!-- /dpr-record -->
+
+    }
+  </main>
+
+</div>
+
+<!-- Image Lightbox -->
+@if (zoomedImage) {
+  <div class="dpr-lightbox" (click)="zoomedImage = null">
+    <div class="dpr-lightbox-inner" (click)="$event.stopPropagation()">
+      <button class="dpr-lightbox-close" (click)="zoomedImage = null"><i class="pi pi-times"></i></button>
+      <img [src]="zoomedImage" alt="Clinical image"/>
+    </div>
+  </div>
+}

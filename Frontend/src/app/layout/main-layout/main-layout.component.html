@@ -1,0 +1,24 @@
+<div class="layout-wrapper" [class.sidebar-open]="sidebarOpen">
+
+  <!-- Mobile backdrop -->
+  <div class="sidebar-backdrop" (click)="sidebarOpen = false"></div>
+
+  <!-- Mobile-only top bar -->
+  <header class="mobile-topbar">
+    <button class="hamburger" (click)="sidebarOpen = !sidebarOpen" aria-label="Toggle menu">
+      <i class="pi" [ngClass]="sidebarOpen ? 'pi-times' : 'pi-bars'"></i>
+    </button>
+    <div class="mobile-brand">
+      <div class="mobile-brand-mark"><i class="pi pi-heart-fill"></i></div>
+      <span class="mobile-brand-name">MediClinic</span>
+    </div>
+    <div class="mobile-user-av">{{ initials }}</div>
+  </header>
+
+  <app-sidebar [mobileOpen]="sidebarOpen" (navClick)="sidebarOpen = false" />
+
+  <main class="layout-content" (click)="sidebarOpen = false">
+    <router-outlet />
+  </main>
+
+</div>

@@ -1,0 +1,439 @@
+<div class="pr-page">
+
+  <!-- Page Header -->
+  <header class="pr-header">
+    <div class="pr-header-left">
+      <button class="back-btn" routerLink="/dashboard"><i class="pi pi-arrow-left"></i></button>
+      <div>
+        <h1 class="pr-title">Patient Registration</h1>
+        <p class="pr-sub">Create a new patient profile</p>
+      </div>
+    </div>
+  </header>
+
+  @if (!registrationEnabled) {
+    <!-- Registration disabled by admin -->
+    <div class="reg-disabled">
+      <div class="reg-disabled-icon"><i class="pi pi-ban"></i></div>
+      <h2 class="reg-disabled-title">Registration Unavailable</h2>
+      <p class="reg-disabled-text">
+        New patient registration is currently turned off. Please contact your system
+        administrator to enable it before registering patients.
+      </p>
+      <button class="reg-disabled-btn" routerLink="/dashboard">
+        <i class="pi pi-arrow-left"></i> Back to Dashboard
+      </button>
+    </div>
+  } @else {
+
+  <!-- Auto-fill banner (returning patient found via ID proof) -->
+  @if (autoFilledPatient) {
+    <div class="autofill-banner">
+      <i class="pi pi-user-edit autofill-icon"></i>
+      <div class="autofill-info">
+        <strong>Returning patient found: {{ autoFilledPatient.name }} ({{ autoFilledPatient.patientId }})</strong>
+        <span>All details have been auto-filled from the existing record. This patient is already registered.</span>
+      </div>
+      <button class="autofill-btn autofill-btn--checkin" (click)="goToCheckInAutofilled()">
+        <i class="pi pi-check-circle"></i> Check-In Instead
+      </button>
+      <button class="autofill-btn autofill-btn--dismiss" (click)="dismissAutoFill()">
+        <i class="pi pi-times"></i>
+      </button>
+    </div>
+  }
+
+  <!-- Form (full width) -->
+  <div class="pr-body">
+
+    <!-- 1. Personal Information -->
+    <div class="form-section">
+      <div class="section-heading">
+        <i class="pi pi-user"></i>
+        <span>1. &nbsp;Personal Information</span>
+      </div>
+
+      <div class="form-grid-2">
+        <div class="field" [class.invalid]="firstNameInvalid">
+          <label>First Name <span class="req">*</span></label>
+          <input pInputText [(ngModel)]="firstName" (ngModelChange)="onNameOrDobChange()" placeholder="First name" />
+          @if (firstNameInvalid) { <p class="field-error"><i class="pi pi-exclamation-circle"></i> First name is required.</p> }
+        </div>
+        <div class="field" [class.invalid]="lastNameInvalid">
+          <label>Last Name <span class="req">*</span></label>
+          <input pInputText [(ngModel)]="lastName" (ngModelChange)="onNameOrDobChange()" placeholder="Last name" />
+          @if (lastNameInvalid) { <p class="field-error"><i class="pi pi-exclamation-circle"></i> Last name is required.</p> }
+        </div>
+      </div>
+
+      <div class="form-grid-3">
+        <div class="field" [class.invalid]="dobInvalid">
+          <label>Date of Birth <span class="req">*</span></label>
+          <p-datepicker [(ngModel)]="dob" (ngModelChange)="onNameOrDobChange()" dateFormat="dd/mm/yy"
+                        [showIcon]="true" placeholder="DD/MM/YYYY"
+                        [maxDate]="today"
+                        styleClass="w-full" inputStyleClass="w-full" />
+          @if (dobInvalid) { <p class="field-error"><i class="pi pi-exclamation-circle"></i> Date of birth is required.</p> }
+        </div>
+        <div class="field">
+          <label>Age</label>
+          <div class="age-display" [class.age-active]="!!dob">
+            <i class="pi pi-clock"></i>
+            <span>{{ age }}</span>
+          </div>
+        </div>
+        <div class="field" [class.invalid]="genderInvalid">
+          <label>Gender <span class="req">*</span></label>
+          <p-select [options]="genderOpts" [(ngModel)]="gender"
+                    placeholder="Select gender" styleClass="w-full" />
+          @if (genderInvalid) { <p class="field-error"><i class="pi pi-exclamation-circle"></i> Gender is required.</p> }
+        </div>
+      </div>
+
+      @if (duplicateNameDob) {
+        <div class="dup-error">
+          <i class="pi pi-exclamation-circle"></i>
+          <span>{{ duplicateNameDob }} Please verify before creating a new record.</span>
+        </div>
+      }
+
+      <div class="form-grid-2">
+        <div class="field">
+          <label>Blood Group</label>
+          <p-select [options]="bloodOpts" [(ngModel)]="bloodGroup"
+                    placeholder="Select blood group" styleClass="w-full" />
+        </div>
+        <div class="field" [class.invalid]="mobileInvalid">
+          <label>Mobile Number <span class="req">*</span></label>
+          <input pInputText [(ngModel)]="mobile" placeholder="Enter mobile number"
+                 (ngModelChange)="onMobileChange()" (blur)="onMobileBlur()" />
+          @if (mobileInvalid) { <p class="field-error"><i class="pi pi-exclamation-circle"></i> {{ mobileErrorMsg }}</p> }
+          @if (duplicateMobile) {
+            <div class="dup-warn">
+              <div class="dup-warn-msg">
+                <i class="pi pi-exclamation-triangle"></i>
+                <span>This number is already linked to <strong>{{ mobileMatchName }}</strong> ({{ mobileMatchId }}).</span>
+              </div>
+              <label class="dup-family-opt">
+                <input type="checkbox" [(ngModel)]="allowDuplicateMobile" />
+                <span>Register as a separate family member using the same number</span>
+              </label>
+            </div>
+          }
+        </div>
+      </div>
+
+      <div class="form-grid-2">
+        <div class="field">
+          <label>ID Proof Type</label>
+          <p-select [options]="idProofOpts" [(ngModel)]="idProofType"
+                    (ngModelChange)="onIdTypeChange()"
+                    placeholder="Select ID type" styleClass="w-full"
+                    [showClear]="true" />
+        </div>
+        <div class="field">
+          <label>ID Proof Number</label>
+          <div class="id-input-wrap">
+            <input pInputText
+                   [ngModel]="idProofNumber"
+                   (ngModelChange)="onIdNumberChange($event)"
+                   (blur)="onIdNumberBlur()"
+                   [maxlength]="idMaxLength"
+                   [placeholder]="idProofType ? 'Enter ' + idProofType + ' number' : 'Select ID type first'"
+                   [disabled]="!idProofType" />
+            @if (isCheckingIdProof) {
+              <i class="pi pi-spin pi-spinner id-check-spin"></i>
+            }
+          </div>
+          @if (idProofError) {
+            <p class="field-error">{{ idProofError }}</p>
+          }
+        </div>
+      </div>
+
+      <div class="form-grid-2">
+        <div class="field">
+          <label>Email</label>
+          <input pInputText [(ngModel)]="email" type="email" placeholder="Enter email address" />
+        </div>
+        <div class="field">
+          <label>Address</label>
+          <input pInputText [(ngModel)]="address" placeholder="Enter full address" />
+        </div>
+      </div>
+
+      <div class="form-grid-2">
+        <div class="field">
+          <label>Insurance Company <span class="opt-label">(Optional)</span></label>
+          <p-select [options]="insuranceOpts" [(ngModel)]="insuranceCompany"
+                    placeholder="Select insurance company" styleClass="w-full"
+                    [showClear]="true" />
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. Additional Information (Optional) -->
+    <div class="form-section form-section--optional">
+      <div class="section-heading">
+        <i class="pi pi-id-card"></i>
+        <span>2. &nbsp;Additional Information</span>
+        <span class="optional-badge">Optional</span>
+      </div>
+
+      <p class="subsection-label">Emergency Contact</p>
+      <div class="form-grid-2">
+        <div class="field">
+          <label>Contact Name</label>
+          <input pInputText [(ngModel)]="emergencyName" placeholder="Full name" />
+        </div>
+        <div class="field">
+          <label>Relationship</label>
+          <p-select [options]="relationshipOpts" [(ngModel)]="emergencyRelation"
+                    placeholder="Select relationship" styleClass="w-full" />
+        </div>
+      </div>
+      <div class="form-grid-2">
+        <div class="field">
+          <label>Contact Number</label>
+          <input pInputText [(ngModel)]="emergencyPhone" placeholder="Enter phone number" />
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. Medical Information -->
+    <div class="form-section">
+      <div class="section-heading">
+        <i class="pi pi-heart"></i>
+        <span>3. &nbsp;Medical Information</span>
+      </div>
+
+      <div class="form-grid-2">
+        <div class="field">
+          <label>Known Allergies</label>
+          <div class="chip-input-box">
+            @for (chip of allergies; track chip) {
+              <span class="chip chip--red">{{ chip }}
+                <button (click)="removeChip(allergies, $index)"><i class="pi pi-times"></i></button>
+              </span>
+            }
+            <input [(ngModel)]="allergyInput" placeholder="Type and press Enter…"
+                   (keydown)="onAllergyKey($event)" />
+          </div>
+        </div>
+        <div class="field">
+          <label>Chronic Conditions</label>
+          <div class="chip-input-box">
+            @for (chip of conditions; track chip) {
+              <span class="chip chip--blue">{{ chip }}
+                <button (click)="removeChip(conditions, $index)"><i class="pi pi-times"></i></button>
+              </span>
+            }
+            <input [(ngModel)]="conditionInput" placeholder="Type and press Enter…"
+                   (keydown)="onConditionKey($event)" />
+          </div>
+        </div>
+      </div>
+
+      <div class="form-grid-2">
+        <div class="field">
+          <label>Current Medications</label>
+          <div class="chip-input-box">
+            @for (chip of medications; track chip) {
+              <span class="chip chip--green">{{ chip }}
+                <button (click)="removeChip(medications, $index)"><i class="pi pi-times"></i></button>
+              </span>
+            }
+            <input [(ngModel)]="medicationInput" placeholder="Type and press Enter…"
+                   (keydown)="onMedicationKey($event)" />
+          </div>
+        </div>
+        <div class="field">
+          <label>Previous Surgeries <span class="opt-label">(Optional)</span></label>
+          <input pInputText [(ngModel)]="prevSurgeries" placeholder="E.g. Appendectomy, Knee Surgery" />
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Additional Notes <span class="opt-label">(Optional)</span></label>
+        <textarea pTextarea [(ngModel)]="notes" rows="4"
+                  placeholder="Any additional information about the patient" class="w-full"></textarea>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Missing mandatory fields -->
+  @if (regSubmitted && hasMandatoryErrors) {
+    <div class="pr-error-bar">
+      <i class="pi pi-exclamation-triangle"></i> Please fill all required fields marked in red before registering.
+    </div>
+  }
+
+  <!-- Error message -->
+  @if (errorMessage) {
+    <div class="pr-error-bar">
+      <i class="pi pi-exclamation-circle"></i> {{ errorMessage }}
+    </div>
+  }
+
+  <!-- Footer -->
+  <div class="pr-footer">
+    <button class="footer-btn footer-btn--ghost" (click)="clearForm()">
+      <i class="pi pi-refresh"></i> Clear Form
+    </button>
+    <div class="footer-right">
+      <button class="footer-btn footer-btn--primary" (click)="openPreview()" [disabled]="isLoading">
+        <i class="pi pi-eye"></i> Register Patient
+      </button>
+    </div>
+  </div>
+
+  }
+</div>
+
+<!-- ── PREVIEW DIALOG ── -->
+<p-dialog [(visible)]="showPreview" [modal]="true" [closable]="true"
+          header="Patient Preview" [style]="{ width: '500px', maxWidth: '95vw' }"
+          styleClass="preview-dialog">
+  <div class="pvw-body">
+
+    <!-- Identity -->
+    <div class="pvw-identity">
+      <div class="pvw-avatar" [class.has-name]="firstName || lastName">{{ initials }}</div>
+      <div>
+        <p class="pvw-name">{{ fullName }}</p>
+        <span class="new-badge">New Patient</span>
+      </div>
+      <div class="pvw-id-chip">
+        <i class="pi pi-shield"></i>
+        <span>ID will be generated</span>
+      </div>
+    </div>
+
+    <div class="pvw-divider"></div>
+
+    <!-- Personal details grid -->
+    <div class="pvw-grid">
+      @if (dob) {
+        <div class="pvw-item">
+          <i class="pi pi-calendar pvw-icon"></i>
+          <div><p class="pvw-lbl">Date of Birth</p><p class="pvw-val">{{ formattedDob }}</p></div>
+        </div>
+      }
+      @if (gender) {
+        <div class="pvw-item">
+          <i class="pi pi-user pvw-icon"></i>
+          <div><p class="pvw-lbl">Gender</p><p class="pvw-val">{{ gender }}</p></div>
+        </div>
+      }
+      @if (bloodGroup) {
+        <div class="pvw-item">
+          <i class="pi pi-heart pvw-icon"></i>
+          <div><p class="pvw-lbl">Blood Group</p><p class="pvw-val">{{ bloodGroup }}</p></div>
+        </div>
+      }
+      @if (mobile) {
+        <div class="pvw-item">
+          <i class="pi pi-phone pvw-icon"></i>
+          <div><p class="pvw-lbl">Mobile</p><p class="pvw-val">{{ mobile }}</p></div>
+        </div>
+      }
+      @if (email) {
+        <div class="pvw-item">
+          <i class="pi pi-envelope pvw-icon"></i>
+          <div><p class="pvw-lbl">Email</p><p class="pvw-val">{{ email }}</p></div>
+        </div>
+      }
+      @if (address) {
+        <div class="pvw-item pvw-item--full">
+          <i class="pi pi-map-marker pvw-icon"></i>
+          <div><p class="pvw-lbl">Address</p><p class="pvw-val">{{ address }}</p></div>
+        </div>
+      }
+    </div>
+
+    <!-- Emergency Contact -->
+    @if (emergencyName || emergencyPhone) {
+      <div class="pvw-divider"></div>
+      <p class="pvw-section-title">Emergency Contact</p>
+      <div class="pvw-grid">
+        @if (emergencyName) {
+          <div class="pvw-item">
+            <i class="pi pi-user pvw-icon"></i>
+            <div><p class="pvw-lbl">Name</p><p class="pvw-val">{{ emergencyName }}</p></div>
+          </div>
+        }
+        @if (emergencyRelation) {
+          <div class="pvw-item">
+            <i class="pi pi-users pvw-icon"></i>
+            <div><p class="pvw-lbl">Relationship</p><p class="pvw-val">{{ emergencyRelation }}</p></div>
+          </div>
+        }
+        @if (emergencyPhone) {
+          <div class="pvw-item">
+            <i class="pi pi-phone pvw-icon"></i>
+            <div><p class="pvw-lbl">Phone</p><p class="pvw-val">{{ emergencyPhone }}</p></div>
+          </div>
+        }
+      </div>
+    }
+
+    <!-- Medical -->
+    @if (allergies.length || conditions.length || medications.length) {
+      <div class="pvw-divider"></div>
+      <p class="pvw-section-title">Medical Information</p>
+      @if (allergies.length) {
+        <div class="pvw-chips-row">
+          <span class="pvw-chips-label">Allergies</span>
+          @for (c of allergies; track c) { <span class="chip chip--red">{{ c }}</span> }
+        </div>
+      }
+      @if (conditions.length) {
+        <div class="pvw-chips-row">
+          <span class="pvw-chips-label">Conditions</span>
+          @for (c of conditions; track c) { <span class="chip chip--blue">{{ c }}</span> }
+        </div>
+      }
+      @if (medications.length) {
+        <div class="pvw-chips-row">
+          <span class="pvw-chips-label">Medications</span>
+          @for (c of medications; track c) { <span class="chip chip--green">{{ c }}</span> }
+        </div>
+      }
+    }
+  </div>
+
+  <ng-template pTemplate="footer">
+    <div class="pvw-footer">
+      <button class="footer-btn footer-btn--outline" (click)="showPreview = false">
+        <i class="pi pi-arrow-left"></i> Back to Edit
+      </button>
+      <button class="footer-btn footer-btn--primary" (click)="confirmRegister()" [disabled]="isLoading">
+        <i class="pi" [ngClass]="isLoading ? 'pi-spin pi-spinner' : 'pi-check'"></i>
+        {{ isLoading ? 'Registering…' : 'Confirm & Register' }}
+      </button>
+    </div>
+  </ng-template>
+</p-dialog>
+
+<!-- ── SUCCESS DIALOG ── -->
+<p-dialog [(visible)]="showSuccess" [modal]="true" [closable]="false"
+          [style]="{ width: '380px' }" styleClass="success-dialog">
+  <div class="success-body">
+    <div class="success-tick"><i class="pi pi-check"></i></div>
+    <h2 class="success-title">Patient Registered!</h2>
+    <p class="success-name">{{ fullName }}</p>
+    <p class="success-id">{{ registeredId }}</p>
+    <p class="success-msg">has been successfully registered in the system.</p>
+    <p class="success-redirect">
+      <i class="pi pi-spin pi-spinner" style="font-size:12px;margin-right:4px;"></i>
+      Redirecting to Check-In…
+    </p>
+    <div class="success-actions">
+      <button class="success-ok success-ok--outline" (click)="onSuccessClose()">Go to Dashboard</button>
+      <button class="success-ok success-ok--checkin" (click)="checkInNewPatient()">
+        <i class="pi pi-check-circle"></i> Check-In Now
+      </button>
+    </div>
+  </div>
+</p-dialog>

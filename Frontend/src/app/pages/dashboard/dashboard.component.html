@@ -1,0 +1,122 @@
+<div class="dashboard">
+
+  <!-- Page Header -->
+  <div class="page-header">
+    <div class="page-header-left">
+      <h1 class="page-title">Reception Dashboard</h1>
+      <p class="page-sub">Welcome back, Sarah — here's what's happening today.</p>
+    </div>
+    <div class="page-header-right">
+      <div class="date-chip">
+        <i class="pi pi-calendar"></i>
+        <span>{{ today }}</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Stats Row -->
+  <div class="stats-row">
+    @for (stat of stats; track stat.label) {
+      <div class="stat-card" [class.stat-highlight]="stat.highlight">
+        <div class="stat-icon-wrap" [style.background]="stat.iconBg">
+          <i class="pi {{ stat.icon }}" [style.color]="stat.iconColor"></i>
+        </div>
+        <div class="stat-body">
+          <p class="stat-label">{{ stat.label }}</p>
+          <p class="stat-value">{{ stat.value }}</p>
+          <p class="stat-sub">{{ stat.sub }}</p>
+        </div>
+      </div>
+    }
+  </div>
+
+  <!-- Side by Side: Queue (wider) + Doctor Availability -->
+  <div class="main-grid">
+
+    <!-- Today's Queue -->
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <h3 class="card-title">Today's Queue</h3>
+          <p class="card-desc">Live patient tracking</p>
+        </div>
+        <p-select [options]="doctorFilterOptions" [(ngModel)]="selectedDoctor"
+                  optionLabel="label" optionValue="value"
+                  styleClass="filter-select" />
+      </div>
+      <div class="table-scroll">
+        <table class="mc-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Token</th>
+              <th>Patient</th>
+              <th>Doctor</th>
+              <th>Status</th>
+              <th>Check-in</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of filteredQueue; track row.token) {
+              <tr>
+                <td class="col-num">{{ row.num }}</td>
+                <td><span class="token-chip">{{ row.token }}</span></td>
+                <td>
+                  <p class="pt-name">{{ row.patientName }}</p>
+                  <p class="pt-id">{{ row.patientId }}</p>
+                </td>
+                <td class="col-muted">{{ row.doctor }}</td>
+                <td><span class="status-badge" [ngClass]="statusBadgeClass(row.status)">{{ row.status }}</span></td>
+                <td class="col-muted">{{ row.checkIn }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Doctor Availability -->
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <h3 class="card-title">Doctor Availability</h3>
+          <p class="card-desc">On-duty status &amp; timeslots</p>
+        </div>
+      </div>
+      <div class="doc-search">
+        <i class="pi pi-search doc-search-icon"></i>
+        <input pInputText [(ngModel)]="doctorSearch"
+               placeholder="Search by name or specialty…"
+               class="doc-search-input" />
+        @if (doctorSearch) {
+          <button class="doc-search-clear" (click)="doctorSearch = ''">
+            <i class="pi pi-times"></i>
+          </button>
+        }
+      </div>
+      <div class="doc-list">
+        @if (filteredDoctors.length === 0) {
+          <div class="doc-empty">
+            <i class="pi pi-search"></i>
+            <span>No doctors found</span>
+          </div>
+        }
+        @for (doc of filteredDoctors; track doc.name) {
+          <div class="doc-row">
+            <div class="doc-av">{{ doctorInitials(doc.name) }}</div>
+            <div class="doc-info">
+              <p class="doc-name">{{ doc.name }}</p>
+              <p class="doc-spec">{{ doc.specialty }}</p>
+              <div class="doc-slot">
+                <i class="pi pi-clock"></i>
+                <span>{{ doc.from }} – {{ doc.to }}</span>
+              </div>
+            </div>
+            <span class="status-badge" [ngClass]="doctorBadgeClass(doc.status)">{{ doc.status }}</span>
+          </div>
+        }
+      </div>
+    </div>
+
+  </div>
+</div>

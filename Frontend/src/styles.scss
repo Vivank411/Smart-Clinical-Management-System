@@ -1,0 +1,44 @@
+@import "primeicons/primeicons.css";
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+
+:root {
+  --font: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --mc-primary: #0d6e6e;
+  --mc-primary-dark: #0a5252;
+  --mc-sidebar: #0c3d3d;
+  --mc-bg: #f0f4f8;
+  --mc-border: #e2e8f0;
+  --mc-text: #0f172a;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html {
+  height: 100%;
+  /* Prevent iOS bounce + ensure full height */
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  height: 100%;
+  font-family: var(--font);
+  background: var(--mc-bg);
+  color: var(--mc-text);
+  font-size: 14px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+}
+
+/* Ensure app fills viewport */
+app-root {
+  display: block;
+  height: 100%;
+}
+
+/* PrimeNG font overrides */
+::ng-deep .p-inputtext  { font-family: var(--font) !important; }
+::ng-deep .p-button     { font-family: var(--font) !important; font-weight: 600 !important; }
+::ng-deep .p-select-label { font-family: var(--font) !important; }
+::ng-deep .p-overlay-open { font-family: var(--font) !important; }

@@ -1,0 +1,216 @@
+<div class="admin-wrapper">
+
+  <!-- ── Header ── -->
+  <div class="admin-header">
+    <div class="header-left">
+      <h1>Admin Dashboard</h1>
+      <p>Welcome back, {{ auth.getUser()?.name }} — here's what's happening today.</p>
+    </div>
+    <div class="date-pill">
+      <i class="pi pi-calendar"></i>
+      {{ today }}
+    </div>
+  </div>
+
+  <!-- ── Stats Row ── -->
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-icon stat-icon--blue"><i class="pi pi-users"></i></div>
+      <div class="stat-body">
+        <span class="stat-label">TOTAL USERS</span>
+        <span class="stat-value">{{ stats.totalUsers }}</span>
+        <span class="stat-sub">All system users</span>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon stat-icon--teal"><i class="pi pi-heart"></i></div>
+      <div class="stat-body">
+        <span class="stat-label">ACTIVE DOCTORS</span>
+        <span class="stat-value">{{ stats.activeDoctors }}</span>
+        <span class="stat-sub">Available today</span>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon stat-icon--amber"><i class="pi pi-user"></i></div>
+      <div class="stat-body">
+        <span class="stat-label">TOTAL PATIENTS</span>
+        <span class="stat-value">{{ stats.totalPatients }}</span>
+        <span class="stat-sub">Registered in system</span>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon stat-icon--purple"><i class="pi pi-clock"></i></div>
+      <div class="stat-body">
+        <span class="stat-label">AVG WAITING TIME</span>
+        <span class="stat-value">{{ stats.avgWaitingTime }} <small>mins</small></span>
+        <span class="stat-sub">Queue average</span>
+      </div>
+    </div>
+    <div class="stat-card stat-card--accent">
+      <div class="stat-icon stat-icon--white"><i class="pi pi-check-circle"></i></div>
+      <div class="stat-body">
+        <span class="stat-label">CONSULTATIONS</span>
+        <span class="stat-value">{{ stats.consultationsTotal }}</span>
+        <span class="stat-sub">Total completed</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Charts Row ── -->
+  <div class="charts-row">
+
+    <!-- Patient Flow bar chart -->
+    <div class="card chart-card">
+      <div class="card-header">
+        <span class="card-title">Patient Flow</span>
+        <span class="card-badge">This Week</span>
+      </div>
+
+      @if (loading) {
+        <div class="chart-loading"><i class="pi pi-spin pi-spinner"></i></div>
+      } @else if (patientFlow.length === 0 || maxFlowCount === 1) {
+        <div class="chart-empty">No consultation data yet</div>
+      } @else {
+        <div class="bar-chart">
+          <div class="bar-y-labels">
+            <span>{{ maxFlowCount }}</span>
+            <span>{{ (maxFlowCount / 2) | number:'1.0-0' }}</span>
+            <span>0</span>
+          </div>
+          <div class="bars">
+            @for (day of patientFlow; track day.day) {
+              <div class="bar-col">
+                <span class="bar-count" [style.opacity]="day.count > 0 ? 1 : 0">{{ day.count }}</span>
+                <div class="bar-track">
+                  <div class="bar-fill" [style.height.%]="barHeight(day.count)"></div>
+                </div>
+                <span class="bar-label">{{ day.day }}</span>
+              </div>
+            }
+          </div>
+        </div>
+      }
+    </div>
+
+    <!-- Consultation Statistics donut -->
+    <div class="card chart-card">
+      <div class="card-header">
+        <span class="card-title">Consultation Statistics</span>
+      </div>
+
+      <div class="donut-wrapper">
+        <svg viewBox="0 0 120 120" class="donut-svg">
+          <!-- Background ring -->
+          <circle cx="60" cy="60" r="45" fill="none" stroke="#f1f5f9" stroke-width="12" />
+
+          @if (totalConsultations === 0) {
+            <circle cx="60" cy="60" r="45" fill="none" stroke="#e2e8f0" stroke-width="12" />
+          } @else {
+            @for (seg of donutSegments; track seg.label) {
+              @if (seg.len > 0) {
+                <circle
+                  cx="60" cy="60" r="45"
+                  fill="none"
+                  [attr.stroke]="segmentColor(seg.label)"
+                  stroke-width="12"
+                  stroke-linecap="butt"
+                  [attr.stroke-dasharray]="seg.len + ' ' + seg.gap"
+                  [attr.transform]="'rotate(' + seg.rotation + ' 60 60)'"
+                />
+              }
+            }
+          }
+
+          <text x="60" y="55" text-anchor="middle" class="donut-num">{{ totalConsultations }}</text>
+          <text x="60" y="68" text-anchor="middle" class="donut-sub">Total</text>
+        </svg>
+
+        <div class="donut-legend">
+          @for (s of consultationStats; track s.label) {
+            <div class="legend-item">
+              <span class="legend-dot" [style.background]="segmentColor(s.label)"></span>
+              <span class="legend-label">{{ s.label }}</span>
+              <span class="legend-pct">{{ s.count }} ({{ s.percentage }}%)</span>
+            </div>
+          }
+        </div>
+      </div>
+    </div>
+
+    <!-- Doctor Workload -->
+    <div class="card chart-card">
+      <div class="card-header">
+        <span class="card-title">Doctor Workload</span>
+        <span class="card-badge">Today</span>
+      </div>
+
+      @if (doctorWorkload.length === 0) {
+        <div class="chart-empty">No patient assignments yet</div>
+      } @else {
+        <div class="workload-list">
+          @for (doc of doctorWorkload; track doc.name) {
+            <div class="workload-row">
+              <div class="workload-meta">
+                <div class="workload-av">{{ doctorInitials(doc.name) }}</div>
+                <span class="workload-name">{{ doc.name }}</span>
+                <span class="workload-count">{{ doc.count }}</span>
+              </div>
+              <div class="workload-track">
+                <div class="workload-fill" [style.width.%]="workloadWidth(doc)"></div>
+              </div>
+            </div>
+          }
+        </div>
+      }
+    </div>
+
+  </div>
+
+  <!-- ── Recent Audit Activities ── -->
+  <div class="card audit-card">
+    <div class="card-header">
+      <span class="card-title">Recent Audit Activities</span>
+      <a class="view-all-link">View All Logs <i class="pi pi-arrow-right"></i></a>
+    </div>
+
+    <table class="audit-table">
+      <thead>
+        <tr>
+          <th>TIME</th>
+          <th>USER</th>
+          <th>ACTION</th>
+          <th>MODULE</th>
+          <th>DETAILS</th>
+        </tr>
+      </thead>
+      <tbody>
+        @if (auditLogs.length === 0) {
+          <tr>
+            <td colspan="5" class="audit-empty">No recent activity found</td>
+          </tr>
+        } @else {
+          @for (log of auditLogs; track $index) {
+            <tr>
+              <td class="audit-time">{{ log.time }}</td>
+              <td class="audit-user">
+                <div class="audit-user-cell">
+                  <div class="audit-av">{{ log.user[0] }}</div>
+                  {{ log.user }}
+                </div>
+              </td>
+              <td>
+                <div class="audit-action-cell">
+                  <i class="pi {{ actionIcon(log.action) }}"></i>
+                  {{ log.action }}
+                </div>
+              </td>
+              <td><span class="module-tag {{ moduleTag(log.module) }}">{{ log.module }}</span></td>
+              <td class="audit-details">{{ log.details }}</td>
+            </tr>
+          }
+        }
+      </tbody>
+    </table>
+  </div>
+
+</div>

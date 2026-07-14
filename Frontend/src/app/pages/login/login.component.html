@@ -1,0 +1,99 @@
+<div class="login-wrapper">
+
+  <div class="login-left">
+    <div class="left-content">
+      <h2>Streamlined patient care starts at reception</h2>
+      <p>Manage check-ins, queues, and doctor availability — all from one clean, fast interface.</p>
+    </div>
+  </div>
+
+  <div class="login-right">
+    <div class="login-card">
+
+      <div class="login-brand">
+        <div class="brand-mark"><i class="pi pi-heart-fill"></i></div>
+        <div class="brand-text">
+          <h1>MediClinic</h1>
+          <span>Clinic Portal</span>
+        </div>
+      </div>
+
+      <div class="login-heading">
+        <h2>Welcome back</h2>
+        <p>Sign in to continue to your workspace</p>
+      </div>
+
+      <!-- Username — autocomplete across all roles -->
+      <div class="field">
+        <label>Username</label>
+
+        @if (personLoading) {
+          <div class="email-loading">
+            <i class="pi pi-spin pi-spinner"></i> Loading…
+          </div>
+        } @else {
+          <p-autocomplete
+            [(ngModel)]="selectedPerson"
+            [suggestions]="filteredPersons"
+            (completeMethod)="filterPersons($event)"
+            (onSelect)="onPersonSelect($event)"
+            (onBlur)="onNameBlur()"
+            (onClear)="onNameClear()"
+            field="name"
+            [forceSelection]="true"
+            appendTo="body"
+            styleClass="w-full"
+            inputStyleClass="w-full"
+            placeholder="Type to search…">
+            <ng-template pTemplate="item" let-p>
+              <div class="doc-email-item">
+                <div class="doc-email-av doc-email-av--sm">{{ getInitials(p.name) }}</div>
+                <div class="doc-email-text">
+                  <span class="doc-email-name">
+                    {{ p.name }}{{ p.specialization ? ' · ' + p.specialization : '' }}
+                  </span>
+                  <span class="doc-email-addr">{{ p.email }}</span>
+                </div>
+              </div>
+            </ng-template>
+          </p-autocomplete>
+
+          @if (selectedPerson) {
+            <div class="selected-email-hint">
+              <i class="pi pi-envelope"></i> {{ selectedPerson.email }}
+            </div>
+          }
+        }
+      </div>
+
+      <!-- Password -->
+      <div class="field">
+        <label for="password">Password</label>
+        <div class="pw-wrap">
+          <input id="password" [type]="showPw ? 'text' : 'password'"
+                 [(ngModel)]="password"
+                 placeholder="Enter your password"
+                 class="pw-input" />
+          <button class="pw-toggle" type="button" (click)="showPw = !showPw" tabindex="-1">
+            <i class="pi" [ngClass]="showPw ? 'pi-eye-slash' : 'pi-eye'"></i>
+          </button>
+        </div>
+      </div>
+
+      @if (error) {
+        <div class="error-msg">
+          <i class="pi pi-exclamation-circle"></i>
+          {{ error }}
+        </div>
+      }
+
+      <div class="login-btn">
+        <p-button label="Sign In" icon="pi pi-arrow-right" iconPos="right"
+                  [loading]="loading" (onClick)="onLogin()" />
+      </div>
+
+      <p class="login-footer">MediClinic &copy; 2024. All rights reserved.</p>
+    </div>
+  </div>
+
+</div>

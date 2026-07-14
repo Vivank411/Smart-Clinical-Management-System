@@ -1,0 +1,112 @@
+<div class="dq-page">
+
+  <!-- Header -->
+  <header class="dq-header">
+    <div>
+      <h1 class="dq-title">Today's Queue</h1>
+      <p class="dq-sub">Welcome, {{ auth.getUser()?.name }} &nbsp;·&nbsp; {{ today }}</p>
+    </div>
+    <div class="dq-refresh-wrap">
+      @if (lastRefresh) { <span class="dq-refresh-time">Updated {{ lastRefresh }}</span> }
+      <button class="dq-refresh" (click)="loadQueue()" title="Refresh now">
+        <i class="pi pi-refresh"></i>
+      </button>
+    </div>
+  </header>
+
+  <!-- Stats -->
+  <div class="dq-stats">
+    <div class="stat-card">
+      <div class="stat-icon si--teal"><i class="pi pi-users"></i></div>
+      <div><p class="sv">{{ queuePatients.length }}</p><p class="sl">Waiting in Queue</p></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon si--amber"><i class="pi pi-check-circle"></i></div>
+      <div><p class="sv">{{ consultedCount }}</p><p class="sl">Consulted Today</p></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon si--green"><i class="pi pi-verified"></i></div>
+      <div><p class="sv">{{ completedCount }}</p><p class="sl">Completed</p></div>
+    </div>
+  </div>
+
+  <!-- Queue Table -->
+  <div class="queue-card">
+    <div class="queue-card-header">
+      <h2 class="qc-title">Patient Queue</h2>
+      <span class="qc-count">{{ queuePatients.length }} patient{{ queuePatients.length !== 1 ? 's' : '' }} waiting</span>
+    </div>
+
+    @if (isLoading) {
+      <div class="dq-loading">
+        <i class="pi pi-spin pi-spinner"></i>
+        <span>Loading queue…</span>
+      </div>
+    } @else if (queuePatients.length === 0) {
+      <div class="dq-empty">
+        <i class="pi pi-inbox"></i>
+        <p>No patients in queue</p>
+        <span>Checked-in patients will appear here</span>
+      </div>
+    } @else {
+      <div class="table-wrap">
+        <table class="q-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Token</th>
+              <th>Patient</th>
+              <th>Age / Gender</th>
+              <th>Check-In</th>
+              <th>Reason</th>
+              <th>Allergies</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (p of queuePatients; track p.id; let i = $index) {
+              <tr [class.row--alert]="!!p.allergies">
+                <td class="col-num">{{ i + 1 }}</td>
+                <td>
+                  <span class="token-badge">{{ p.queueToken || '—' }}</span>
+                </td>
+                <td>
+                  <div class="pt-cell">
+                    <div class="pt-av">{{ initials(p.name) }}</div>
+                    <div>
+                      <p class="pt-name">{{ p.name }}</p>
+                      <p class="pt-id">{{ p.patientId }}</p>
+                    </div>
+                  </div>
+                </td>
+                <td class="col-muted">{{ p.age }}Y / {{ p.gender }}</td>
+                <td class="col-muted">{{ p.checkinTime || '—' }}</td>
+                <td class="col-reason">{{ p.reasonForVisit || '—' }}</td>
+                <td>
+                  @if (allergyList(p).length) {
+                    <div class="allergy-chips">
+                      @for (a of allergyList(p).slice(0, 2); track a) {
+                        <span class="allergy-chip">{{ a }}</span>
+                      }
+                      @if (allergyList(p).length > 2) {
+                        <span class="allergy-chip allergy-chip--more">+{{ allergyList(p).length - 2 }}</span>
+                      }
+                    </div>
+                  } @else {
+                    <span class="col-muted">—</span>
+                  }
+                </td>
+                <td>
+                  <button class="start-btn" (click)="startConsultation(p)">
+                    Start <i class="pi pi-arrow-right"></i>
+                  </button>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  </div>
+
+</div>

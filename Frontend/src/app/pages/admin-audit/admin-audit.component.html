@@ -1,0 +1,124 @@
+<div class="page-wrap">
+
+  <!-- Header -->
+  <div class="page-header">
+    <div>
+      <h1>Audit Logs</h1>
+      <p>Track and review all system activities and changes</p>
+    </div>
+    <div class="header-right">
+      <div class="date-range"><i class="pi pi-calendar"></i> Jun 13, 2026 – Jun 19, 2026 <i class="pi pi-chevron-down"></i></div>
+      <button class="btn-action"><i class="pi pi-filter"></i> Filters <i class="pi pi-chevron-down"></i></button>
+      <button class="btn-action"><i class="pi pi-download"></i> Export <i class="pi pi-chevron-down"></i></button>
+    </div>
+  </div>
+
+  <!-- Filter Bar -->
+  <div class="filter-bar">
+    <div class="search-box">
+      <i class="pi pi-search"></i>
+      <input type="text" placeholder="Search by user, action, module or details…"
+             [(ngModel)]="search" (ngModelChange)="onFilter()">
+    </div>
+    <select class="f-select" [(ngModel)]="moduleFilter" (ngModelChange)="onFilter()">
+      <option value="">All Modules</option>
+      @for (m of modules; track m) { <option [value]="m">{{ m }}</option> }
+    </select>
+    <select class="f-select" [(ngModel)]="actionFilter" (ngModelChange)="onFilter()">
+      <option value="">All Actions</option>
+      @for (a of actions; track a) { <option [value]="a">{{ a }}</option> }
+    </select>
+    <select class="f-select" [(ngModel)]="statusFilter" (ngModelChange)="onFilter()">
+      <option value="">All Statuses</option>
+      <option value="Success">Success</option>
+      <option value="Failed">Failed</option>
+    </select>
+    <button class="btn-clear" (click)="clearFilters()"><i class="pi pi-refresh"></i> Clear Filters</button>
+  </div>
+
+  <!-- Table Card -->
+  <div class="card">
+    <div class="table-scroll-wrap">
+      <table class="audit-table">
+        <thead>
+          <tr>
+            <th class="col-icon"></th>
+            <th class="col-time">TIME</th>
+            <th class="col-user">USER</th>
+            <th class="col-action">ACTION</th>
+            <th class="col-module">MODULE</th>
+            <th class="col-details">DETAILS</th>
+            <th class="col-ip">IP ADDRESS</th>
+            <th class="col-status">STATUS</th>
+          </tr>
+        </thead>
+        <tbody>
+          @if (loading) {
+            <tr><td colspan="8" class="cell-center"><i class="pi pi-spin pi-spinner"></i> Loading…</td></tr>
+          } @else if (!logs.length) {
+            <tr><td colspan="8" class="cell-center">No audit logs found.</td></tr>
+          } @else {
+            @for (log of logs; track log.id) {
+              <tr>
+                <td class="td-icon">
+                  <div class="act-icon" [style.background]="actionBg(log.actionType)" [style.color]="actionColor(log.actionType)">
+                    <i class="pi" [ngClass]="actionIcon(log.actionType)"></i>
+                  </div>
+                </td>
+                <td class="td-time">
+                  <div class="time-main">{{ log.time.split(' ').slice(0, 3).join(' ') }}</div>
+                  <div class="time-sub">{{ log.time.split(' ').slice(3).join(' ') }}</div>
+                </td>
+                <td class="td-user">
+                  <div class="user-name">{{ log.user }}</div>
+                  <div class="user-email">{{ log.userEmail }}</div>
+                </td>
+                <td class="td-action">
+                  <span class="action-badge" [style.color]="actionColor(log.actionType)">
+                    {{ log.action }}
+                  </span>
+                </td>
+                <td class="td-module">{{ log.module }}</td>
+                <td class="td-details">{{ log.details }}</td>
+                <td class="td-ip">{{ log.ipAddress }}</td>
+                <td class="td-status">
+                  <span class="status-badge" [class.sb--success]="log.status === 'Success'" [class.sb--failed]="log.status === 'Failed'">
+                    {{ log.status }}
+                  </span>
+                </td>
+              </tr>
+            }
+          }
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Footer -->
+    <div class="table-footer">
+      <span class="showing">Showing {{ start }} to {{ end }} of {{ total }} logs</span>
+      <div class="pager">
+        <button class="pg-btn" [disabled]="page === 1" (click)="setPage(1)">
+          <i class="pi pi-angle-double-left"></i>
+        </button>
+        <button class="pg-btn" [disabled]="page === 1" (click)="setPage(page - 1)">
+          <i class="pi pi-angle-left"></i>
+        </button>
+        @for (n of pageNums; track $index) {
+          @if (n === -1) {
+            <span class="pg-ellipsis">…</span>
+          } @else {
+            <button class="pg-btn" [class.pg-btn--active]="page === n" (click)="setPage(n)">{{ n }}</button>
+          }
+        }
+        <button class="pg-btn" [disabled]="page === totalPages" (click)="setPage(page + 1)">
+          <i class="pi pi-angle-right"></i>
+        </button>
+        <button class="pg-btn" [disabled]="page === totalPages" (click)="setPage(totalPages)">
+          <i class="pi pi-angle-double-right"></i>
+        </button>
+        <span class="page-size-label">{{ pageSize }} / page</span>
+      </div>
+    </div>
+  </div>
+
+</div>

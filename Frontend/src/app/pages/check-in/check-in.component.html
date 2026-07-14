@@ -1,0 +1,347 @@
+<div class="ci-page">
+
+  <!-- Page Header -->
+  <header class="ci-header">
+    <div>
+      <h1 class="ci-title">Check-In Patient</h1>
+      <p class="ci-sub">Check-in an existing patient to add them to the consultation queue.</p>
+    </div>
+  </header>
+
+  <!-- Two-column layout -->
+  <div class="ci-body">
+
+    <!-- ── Main Form ── -->
+    <div class="ci-main">
+
+      <!-- Stepper -->
+      <div class="stepper">
+        <div class="step" [class.step--active]="!step1Done" [class.step--done]="step1Done">
+          <div class="step-circle">
+            @if (step1Done) { <i class="pi pi-check"></i> } @else { 1 }
+          </div>
+          <span class="step-label">Select Patient</span>
+        </div>
+        <div class="step-line" [class.step-line--done]="step1Done"></div>
+        <div class="step" [class.step--active]="step2Active && !step3Active" [class.step--done]="step3Active">
+          <div class="step-circle">
+            @if (step3Active) { <i class="pi pi-check"></i> } @else { 2 }
+          </div>
+          <span class="step-label">Visit Details</span>
+        </div>
+        <div class="step-line" [class.step-line--done]="step3Active"></div>
+        <div class="step" [class.step--active]="step3Active">
+          <div class="step-circle">3</div>
+          <span class="step-label">Confirm &amp; Check-In</span>
+        </div>
+      </div>
+
+      <!-- ── Section 1: Select Patient ── -->
+      <div class="form-section">
+        <h3 class="section-title">1. Select Existing Patient</h3>
+
+        @if (!selectedPatient) {
+          <div class="search-row">
+            <p-autocomplete
+              [(ngModel)]="patientSearch"
+              [suggestions]="patientSuggestions"
+              (completeMethod)="filterPatients($event)"
+              (onSelect)="onPatientSelect($event)"
+              field="name"
+              [forceSelection]="false"
+              [minLength]="1"
+              appendTo="body"
+              placeholder="Search by Patient ID, Name or Mobile Number"
+              styleClass="ci-autocomplete"
+              panelStyleClass="ci-patient-panel"
+              inputStyleClass="ci-ac-input" >
+              <ng-template pTemplate="item" let-p>
+                <div class="pac-item">
+                  <div class="pac-avatar">{{ p.initials }}</div>
+                  <div class="pac-detail">
+                    <span class="pac-name">{{ p.name }}</span>
+                    <span class="pac-meta">{{ p.id }} &nbsp;·&nbsp; {{ p.mobile }}</span>
+                  </div>
+                  <span class="pac-age">{{ p.age }}Y · {{ p.gender }}</span>
+                </div>
+              </ng-template>
+            </p-autocomplete>
+            <button class="btn-search-trig" (click)="filterPatients({ query: patientSearch?.name || patientSearch || '' })">
+              <i class="pi pi-search"></i>
+            </button>
+          </div>
+          @if (submitted && !selectedPatient) {
+            <p class="field-error">Please search and select a patient to continue.</p>
+          }
+        }
+
+        @if (selectedPatient) {
+          <div class="sel-patient-card">
+            <div class="spc-avatar">{{ selectedPatient.initials }}</div>
+            <div class="spc-info">
+              <div class="spc-name-row">
+                <span class="spc-name">{{ selectedPatient.name }}</span>
+                <span class="spc-pid">{{ selectedPatient.id }}</span>
+              </div>
+              <span class="spc-mobile">{{ selectedPatient.mobile }}</span>
+            </div>
+            <div class="spc-extra">
+              <span>{{ selectedPatient.age }} Y / {{ selectedPatient.gender }}</span>
+              <span class="spc-blood">{{ selectedPatient.bloodGroup }}</span>
+            </div>
+            <button class="btn-view-det">View Details</button>
+            <div class="spc-tick"><i class="pi pi-check"></i></div>
+            <button class="spc-remove" (click)="clearPatient()"><i class="pi pi-times"></i></button>
+          </div>
+        }
+      </div>
+
+      <!-- ── Section 2: Visit Details ── -->
+      <div class="form-section">
+        <h3 class="section-title">2. Visit Details</h3>
+
+        <div class="form-grid-3">
+          <div class="field">
+            <label>Assign Doctor <span class="req">*</span></label>
+            <p-select [options]="doctors" [(ngModel)]="assignedDoctor"
+                      (ngModelChange)="onDoctorChange()"
+                      optionLabel="label" placeholder="Select doctor"
+                      styleClass="w-full ci-select">
+              <ng-template pTemplate="selectedItem" let-d>
+                @if (d) {
+                  <div class="doc-line">
+                    <span class="doc-name">{{ d.label }}</span>
+                    <span class="doc-spec">{{ d.specialty }}</span>
+                  </div>
+                }
+              </ng-template>
+              <ng-template pTemplate="item" let-d>
+                <div class="doc-line">
+                  <span class="doc-name">{{ d.label }}</span>
+                  <span class="doc-spec">{{ d.specialty }}</span>
+                </div>
+              </ng-template>
+            </p-select>
+            @if (submitted && !assignedDoctor) { <p class="field-error">Required</p> }
+          </div>
+          <div class="field">
+            <label>Visit Date <span class="req">*</span></label>
+            <p-datepicker [(ngModel)]="visitDate" dateFormat="dd/mm/yy"
+                          (ngModelChange)="onVisitDateChange()"
+                          [showIcon]="true" placeholder="DD/MM/YYYY"
+                          [minDate]="today" [maxDate]="today"
+                          appendTo="body" styleClass="w-full"
+                          inputStyleClass="w-full" />
+            @if (submitted && !visitDate) { <p class="field-error">Required</p> }
+          </div>
+          <div class="field">
+            <label>Visit Time <span class="req">*</span></label>
+            <p-select [options]="availableTimeOpts" [(ngModel)]="visitTime"
+                      [placeholder]="'Select time'"
+                      [disabled]="!assignedDoctor"
+                      styleClass="w-full" />
+            @if (assignedDoctor && availableTimeOpts.length === 0) {
+              <p class="field-error">No slots available for today.</p>
+            }
+            @if (submitted && !visitTime && availableTimeOpts.length > 0) { <p class="field-error">Required</p> }
+          </div>
+        </div>
+
+        <div class="form-grid-reason">
+          <div class="field">
+            <label>Reason for Visit <span class="req">*</span></label>
+            <textarea pTextarea [(ngModel)]="reasonForVisit" rows="3"
+                      placeholder="Describe the reason for visit"
+                      class="w-full reason-ta"></textarea>
+            @if (submitted && !reasonForVisit.trim()) { <p class="field-error">Required</p> }
+          </div>
+          <div class="field">
+            <label>Visit Type</label>
+            <p-select [options]="visitTypeOpts" [(ngModel)]="visitType"
+                      styleClass="w-full" />
+          </div>
+          <div class="field">
+            <label>Priority</label>
+            <div class="priority-group">
+              <label class="prio-opt" [class.prio-active]="priority === 'Normal'">
+                <p-radiobutton [(ngModel)]="priority" value="Normal" name="priority" />
+                <span>Normal</span>
+              </label>
+              <label class="prio-opt prio-urgent" [class.prio-active]="priority === 'Urgent'">
+                <p-radiobutton [(ngModel)]="priority" value="Urgent" name="priority" />
+                <span>Urgent</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-grid-2">
+          <div class="field">
+            <label>Symptoms <span class="opt-label">(Optional)</span></label>
+            <textarea pTextarea [(ngModel)]="symptoms" rows="3"
+                      placeholder="Enter symptoms (optional)" class="w-full"></textarea>
+          </div>
+          <div class="field">
+            <label>Notes <span class="opt-label">(Optional)</span></label>
+            <textarea pTextarea [(ngModel)]="notes" rows="3"
+                      placeholder="Any additional notes" class="w-full"></textarea>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Upload Documents <span class="opt-label">(Optional)</span></label>
+          <div class="upload-row">
+            <label class="upload-btn" for="ci-file-upload">
+              <i class="pi pi-upload"></i> Upload File
+            </label>
+            <input id="ci-file-upload" type="file"
+                   accept=".jpg,.jpeg,.png,.pdf"
+                   (change)="onFileChange($event)" hidden />
+            <span class="upload-hint">
+              {{ uploadedFileName || 'Supported formats: JPG, PNG, PDF (Max 5MB)' }}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Section 3: Confirm & Check-In ── -->
+      <div class="form-section form-section--confirm">
+        <h3 class="section-title">3. Confirm &amp; Check-In</h3>
+        <div class="confirm-info">
+          <i class="pi pi-info-circle"></i>
+          <span>Once you check-in, a queue token will be generated and the patient will be added to the doctor's queue.</span>
+        </div>
+        @if (errorMessage) {
+          <div style="color:#dc2626;font-size:13px;margin:8px 0;padding:8px 12px;background:#fef2f2;border-radius:6px;border:1px solid #fecaca;">
+            <i class="pi pi-exclamation-circle" style="margin-right:6px;"></i>{{ errorMessage }}
+          </div>
+        }
+        <div class="confirm-actions">
+          <button class="btn-cancel" (click)="cancel()">Cancel</button>
+          <div class="confirm-right">
+            <button class="btn-preview" (click)="openPreview()" [disabled]="isLoading">
+              <i class="pi pi-eye"></i> Preview
+            </button>
+            <button class="btn-checkin" (click)="checkIn()" [disabled]="isLoading">
+              <i class="pi" [ngClass]="isLoading ? 'pi-spin pi-spinner' : ''"></i>
+              {{ isLoading ? 'Processing…' : 'Check-In Patient' }}&nbsp;<i class="pi pi-arrow-right"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+</div>
+
+<!-- ── Preview Dialog ── -->
+<p-dialog [(visible)]="showPreview" [modal]="true" [closable]="true"
+          header="Check-In Preview" [style]="{ width: '560px', maxWidth: '96vw' }"
+          styleClass="ci-preview-dialog">
+  <div class="pv-body">
+
+    <!-- Patient block -->
+    <div class="pv-patient-block">
+      <div class="pv-pt-avatar">{{ selectedPatient?.initials }}</div>
+      <div class="pv-pt-info">
+        <div class="pv-pt-name-row">
+          <span class="pv-pt-name">{{ selectedPatient?.name }}</span>
+          <span class="pv-pt-pid">{{ selectedPatient?.id }}</span>
+          <span class="pv-active-badge">Active</span>
+        </div>
+        <span class="pv-pt-meta">
+          {{ selectedPatient?.mobile }}
+          &nbsp;·&nbsp; {{ selectedPatient?.age }}Y / {{ selectedPatient?.gender }}
+          &nbsp;·&nbsp; {{ selectedPatient?.bloodGroup }}
+        </span>
+      </div>
+    </div>
+
+    <div class="pv-divider"></div>
+
+    <!-- Visit details grid -->
+    <div class="pv-grid">
+      <div class="pv-item">
+        <span class="pv-lbl">Doctor</span>
+        <div class="pv-val-col">
+          <span class="pv-val">{{ assignedDoctor?.label || '—' }}</span>
+          @if (assignedDoctor?.specialty) {
+            <span class="pv-spec">{{ assignedDoctor!.specialty }}</span>
+          }
+        </div>
+      </div>
+      <div class="pv-item">
+        <span class="pv-lbl">Date &amp; Time</span>
+        <span class="pv-val">{{ visitDateTimeDisplay }}</span>
+      </div>
+      <div class="pv-item">
+        <span class="pv-lbl">Visit Type</span>
+        <span class="pv-val">{{ visitType }}</span>
+      </div>
+      <div class="pv-item">
+        <span class="pv-lbl">Priority</span>
+        <span class="pv-prio-badge" [class.pv-prio-urgent]="priority === 'Urgent'">{{ priority }}</span>
+      </div>
+      <div class="pv-item pv-item--full">
+        <span class="pv-lbl">Reason for Visit</span>
+        <span class="pv-val">{{ reasonForVisit || '—' }}</span>
+      </div>
+      @if (symptoms) {
+        <div class="pv-item pv-item--full">
+          <span class="pv-lbl">Symptoms</span>
+          <span class="pv-val">{{ symptoms }}</span>
+        </div>
+      }
+      @if (notes) {
+        <div class="pv-item pv-item--full">
+          <span class="pv-lbl">Notes</span>
+          <span class="pv-val">{{ notes }}</span>
+        </div>
+      }
+      @if (uploadedFileName) {
+        <div class="pv-item pv-item--full">
+          <span class="pv-lbl">Document</span>
+          <span class="pv-val"><i class="pi pi-paperclip" style="font-size:12px;margin-right:4px;"></i>{{ uploadedFileName }}</span>
+        </div>
+      }
+    </div>
+
+    <div class="pv-divider"></div>
+
+    <!-- Queue token notice -->
+    <div class="pv-token-notice">
+      <i class="pi pi-ticket"></i>
+      <span>A unique Queue Token will be generated and the patient will be added to <strong>{{ assignedDoctor?.label || "the doctor" }}'s</strong> queue upon confirmation.</span>
+    </div>
+
+  </div>
+
+  <ng-template pTemplate="footer">
+    <div class="pv-footer">
+      <button class="btn-update" (click)="showPreview = false">
+        <i class="pi pi-arrow-left"></i> Update
+      </button>
+      <button class="btn-confirm-ci" (click)="confirmCheckIn()" [disabled]="isLoading">
+        <i class="pi" [ngClass]="isLoading ? 'pi-spin pi-spinner' : 'pi-check'"></i>
+        {{ isLoading ? 'Processing…' : 'Confirm & Check-In' }}
+      </button>
+    </div>
+  </ng-template>
+</p-dialog>
+
+<!-- ── Success Dialog ── -->
+<p-dialog [(visible)]="showSuccess" [modal]="true" [closable]="false"
+          [style]="{ width: '400px' }" styleClass="ci-success-dialog">
+  <div class="success-body">
+    <div class="success-tick"><i class="pi pi-check"></i></div>
+    <h2 class="success-title">Check-In Successful!</h2>
+    <p class="success-sub">{{ selectedPatient?.name }}</p>
+    <div class="token-box">
+      <span class="token-label">Queue Token</span>
+      <span class="token-value">{{ queueToken }}</span>
+    </div>
+    <p class="success-msg">Patient has been added to the doctor's queue.</p>
+    <button class="btn-done" (click)="onSuccessClose()">Done</button>
+  </div>
+</p-dialog>

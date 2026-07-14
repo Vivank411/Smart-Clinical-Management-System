@@ -1,0 +1,340 @@
+<div class="dd-page">
+
+  <!-- Header -->
+  <header class="dd-header">
+    <div>
+      <h1 class="dd-title">Patient Queue</h1>
+      <p class="dd-sub">Review patient records and update medical details</p>
+    </div>
+    <button class="dd-refresh" (click)="loadPatients()" title="Refresh">
+      <i class="pi pi-refresh"></i>
+    </button>
+  </header>
+
+  <!-- Stats -->
+  <div class="dd-stats">
+    <div class="stat-card">
+      <div class="stat-icon stat-icon--total"><i class="pi pi-users"></i></div>
+      <div>
+        <p class="stat-val">{{ totalCount }}</p>
+        <p class="stat-lbl">Total Patients</p>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon stat-icon--blue"><i class="pi pi-clock"></i></div>
+      <div>
+        <p class="stat-val">{{ checkedInCount }}</p>
+        <p class="stat-lbl">Awaiting Review</p>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon stat-icon--green"><i class="pi pi-check-circle"></i></div>
+      <div>
+        <p class="stat-val">{{ reviewedCount }}</p>
+        <p class="stat-lbl">Reviewed</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Search -->
+  <div class="dd-search-bar">
+    <i class="pi pi-search dd-search-icon"></i>
+    <input pInputText
+           [(ngModel)]="searchQuery"
+           (ngModelChange)="applyFilter()"
+           placeholder="Search by patient name, ID or mobile…"
+           class="dd-search-input" />
+    @if (searchQuery) {
+      <button class="dd-clear-btn" (click)="searchQuery = ''; applyFilter()">
+        <i class="pi pi-times"></i>
+      </button>
+    }
+  </div>
+
+  <!-- Patient Cards -->
+  @if (isLoading) {
+    <div class="dd-loading">
+      <i class="pi pi-spin pi-spinner"></i>
+      <span>Loading patients…</span>
+    </div>
+  } @else if (filteredPatients.length === 0) {
+    <div class="dd-empty">
+      <i class="pi pi-inbox"></i>
+      <p>No patients found</p>
+    </div>
+  } @else {
+    <div class="dd-grid">
+      @for (p of filteredPatients; track p.id) {
+        <div class="pt-card" [class.pt-card--reviewed]="isReviewed(p)" (click)="openPatient(p)">
+
+          <!-- Top row: avatar + ID -->
+          <div class="pt-card-top">
+            <div class="pt-av">{{ p.name[0] }}</div>
+            <span class="pt-pid">{{ p.patientId }}</span>
+            @if (isReviewed(p)) {
+              <span class="pt-reviewed-badge"><i class="pi pi-check"></i> Reviewed</span>
+            }
+          </div>
+
+          <!-- Name + demographics -->
+          <p class="pt-name">{{ p.name }}</p>
+          <p class="pt-demo">{{ p.age }} yrs &nbsp;·&nbsp; {{ p.gender }}</p>
+
+          <!-- Status + info -->
+          <div class="pt-card-bottom">
+            <span class="pt-status" [ngClass]="statusClass(p.status)">{{ p.status }}</span>
+            @if (p.checkinTime) {
+              <span class="pt-time"><i class="pi pi-clock"></i> {{ p.checkinTime }}</span>
+            }
+          </div>
+
+          <div class="pt-view-hint">View Details <i class="pi pi-arrow-right"></i></div>
+
+        </div>
+      }
+    </div>
+  }
+
+</div>
+
+<!-- ── Patient Detail Dialog ── -->
+<p-dialog [(visible)]="showDetail" [modal]="true" [closable]="false"
+          [draggable]="false" appendTo="body"
+          [style]="{ width: '640px', maxWidth: '96vw' }"
+          styleClass="ddd-dialog">
+
+  @if (isLoadingDetail) {
+    <div class="ddd-loading">
+      <i class="pi pi-spin pi-spinner"></i>
+      <span>Loading patient details…</span>
+    </div>
+  }
+
+  @if (selectedPatient && !isLoadingDetail) {
+    <div class="ddd-body">
+
+      <!-- Identity header -->
+      <div class="ddd-identity" [class.ddd-identity--reviewed]="isReviewed(selectedPatient)">
+        <div class="ddd-av">{{ detailInitials }}</div>
+        <div class="ddd-id-info">
+          <div class="ddd-name-row">
+            <span class="ddd-name">{{ selectedPatient.name }}</span>
+            <span class="ddd-pid">{{ selectedPatient.patientId }}</span>
+          </div>
+          <div class="ddd-meta-row">
+            <span class="ddd-status" [ngClass]="statusClass(selectedPatient.status)">
+              {{ selectedPatient.status }}
+            </span>
+            @if (selectedPatient.doctor) {
+              <span class="ddd-doctor"><i class="pi pi-user"></i> {{ selectedPatient.doctor }}</span>
+            }
+          </div>
+        </div>
+      </div>
+
+      <!-- Personal Information -->
+      <p class="ddd-section-title"><i class="pi pi-user"></i> Personal Information</p>
+      <div class="ddd-grid">
+        <div class="ddd-item">
+          <span class="ddd-lbl">Date of Birth</span>
+          <span class="ddd-val">{{ formatDob(selectedPatient.dob) }}</span>
+        </div>
+        <div class="ddd-item">
+          <span class="ddd-lbl">Age / Gender</span>
+          <span class="ddd-val">{{ selectedPatient.age }} yrs / {{ selectedPatient.gender }}</span>
+        </div>
+        <div class="ddd-item">
+          <span class="ddd-lbl">Mobile</span>
+          <span class="ddd-val">{{ selectedPatient.mobileNumber || '—' }}</span>
+        </div>
+        @if (selectedPatient.insuranceCompany) {
+          <div class="ddd-item">
+            <span class="ddd-lbl">Insurance</span>
+            <span class="ddd-val">{{ selectedPatient.insuranceCompany }}</span>
+          </div>
+        }
+        @if (selectedPatient.addressLine1 || selectedPatient.city) {
+          <div class="ddd-item ddd-item--full">
+            <span class="ddd-lbl">Address</span>
+            <span class="ddd-val">{{ formatAddress(selectedPatient) }}</span>
+          </div>
+        }
+      </div>
+
+      <!-- ID Proof -->
+      @if (selectedPatient.idProofType && selectedPatient.idProofNumber) {
+        <div class="ddd-divider"></div>
+        <p class="ddd-section-title"><i class="pi pi-id-card"></i> ID Proof</p>
+        <div class="ddd-grid">
+          <div class="ddd-item">
+            <span class="ddd-lbl">Type</span>
+            <span class="ddd-val">{{ selectedPatient.idProofType }}</span>
+          </div>
+          <div class="ddd-item">
+            <span class="ddd-lbl">Number</span>
+            <span class="ddd-val ddd-mono">{{ selectedPatient.idProofNumber }}</span>
+          </div>
+        </div>
+      }
+
+      <!-- Visit Information -->
+      @if (selectedPatient.checkinTime || selectedPatient.reasonForVisit || selectedPatient.queueToken) {
+        <div class="ddd-divider"></div>
+        <p class="ddd-section-title"><i class="pi pi-calendar"></i> Visit Information</p>
+        <div class="ddd-grid">
+          @if (selectedPatient.queueToken) {
+            <div class="ddd-item">
+              <span class="ddd-lbl">Queue Token</span>
+              <span class="ddd-val ddd-token">{{ selectedPatient.queueToken }}</span>
+            </div>
+          }
+          @if (selectedPatient.checkinTime) {
+            <div class="ddd-item">
+              <span class="ddd-lbl">Check-In Time</span>
+              <span class="ddd-val">{{ selectedPatient.checkinTime }}</span>
+            </div>
+          }
+          @if (selectedPatient.reasonForVisit) {
+            <div class="ddd-item ddd-item--full">
+              <span class="ddd-lbl">Reason for Visit</span>
+              <span class="ddd-val">{{ selectedPatient.reasonForVisit }}</span>
+            </div>
+          }
+        </div>
+      }
+
+      <!-- ── Medical Details ── -->
+      <div class="ddd-divider"></div>
+
+      <div class="ddd-medical-header">
+        <p class="ddd-section-title ddd-section-title--medical">
+          <i class="pi pi-heart"></i> Medical Details
+        </p>
+        @if (!isEditing) {
+          <button class="ddd-edit-btn" (click)="startEdit()">
+            <i class="pi pi-pencil"></i> Edit
+          </button>
+        }
+      </div>
+
+      @if (!isEditing) {
+        <!-- Read-only medical view -->
+        <div class="ddd-grid">
+          @if (detailAllergyList.length) {
+            <div class="ddd-item ddd-item--full">
+              <span class="ddd-lbl">Allergies</span>
+              <div class="ddd-chips">
+                @for (a of detailAllergyList; track a) {
+                  <span class="ddd-chip ddd-chip--red">{{ a }}</span>
+                }
+              </div>
+            </div>
+          }
+          @if (medDetails; as md) {
+            @if (md.structured) {
+              @if (md.symptoms.length) {
+                <div class="ddd-item ddd-item--full">
+                  <span class="ddd-lbl"><i class="pi pi-list"></i> Presenting Symptoms</span>
+                  <div class="ddd-chips">
+                    @for (s of md.symptoms; track s) {
+                      <span class="ddd-chip">{{ s }}</span>
+                    }
+                  </div>
+                </div>
+              }
+              @if (md.vitals.length) {
+                <div class="ddd-item ddd-item--full">
+                  <span class="ddd-lbl"><i class="pi pi-heart-fill"></i> Vitals</span>
+                  <div class="ddd-vitals">
+                    @for (vt of md.vitals; track vt.label) {
+                      <div class="ddd-vital">
+                        <div class="ddd-vital-ic"><i class="pi {{ vt.icon }}"></i></div>
+                        <div class="ddd-vital-txt">
+                          <span class="ddd-vital-lbl">{{ vt.label }}</span>
+                          <span class="ddd-vital-val">{{ vt.value }}</span>
+                        </div>
+                      </div>
+                    }
+                  </div>
+                </div>
+              }
+              @if (md.diagnosis) {
+                <div class="ddd-item ddd-item--full">
+                  <span class="ddd-lbl"><i class="pi pi-check-circle"></i> Diagnosis</span>
+                  <div class="ddd-diagnosis">{{ md.diagnosis }}</div>
+                </div>
+              }
+              @if (md.notes) {
+                <div class="ddd-item ddd-item--full">
+                  <span class="ddd-lbl"><i class="pi pi-file-edit"></i> Clinical Notes</span>
+                  <div class="ddd-note ddd-multiline">{{ md.notes }}</div>
+                </div>
+              }
+              @if (md.historyNotes) {
+                <div class="ddd-item ddd-item--full">
+                  <span class="ddd-lbl"><i class="pi pi-book"></i> Past Medication / History</span>
+                  <div class="ddd-note ddd-multiline">{{ md.historyNotes }}</div>
+                </div>
+              }
+            } @else {
+              <div class="ddd-item ddd-item--full">
+                <span class="ddd-lbl"><i class="pi pi-book"></i> Medical History / Diagnosis</span>
+                <div class="ddd-note ddd-multiline">{{ md.historyNotes }}</div>
+              </div>
+            }
+          }
+          @if (!detailAllergyList.length && !medDetails) {
+            <div class="ddd-item ddd-item--full">
+              <span class="ddd-empty-hint">No medical details recorded yet. Click Edit to add.</span>
+            </div>
+          }
+        </div>
+      } @else {
+        <!-- Editable medical form -->
+        <div class="ddd-edit-form">
+
+          <div class="edit-field">
+            <label class="edit-lbl">Allergies</label>
+            <div class="chip-input-box">
+              @for (chip of editAllergies; track chip; let i = $index) {
+                <span class="chip chip--red">{{ chip }}
+                  <button type="button" (click)="removeAllergy(i)"><i class="pi pi-times"></i></button>
+                </span>
+              }
+              <input [(ngModel)]="editAllergyInput"
+                     placeholder="Type allergy and press Enter…"
+                     (keydown)="onAllergyKey($event)" />
+            </div>
+          </div>
+
+          <div class="edit-field">
+            <label class="edit-lbl">Past Medication / History</label>
+            <textarea [(ngModel)]="editMedicalHistory"
+                      rows="4"
+                      class="edit-textarea"
+                      placeholder="Enter past medication, medical history, ongoing conditions…"></textarea>
+            @if (editBase) {
+              <span class="edit-hint"><i class="pi pi-info-circle"></i> The doctor's consultation notes (symptoms, vitals, diagnosis) are preserved automatically.</span>
+            }
+          </div>
+
+        </div>
+      }
+
+      <!-- Dialog footer -->
+      <div class="ddd-footer">
+        @if (!isEditing) {
+          <button class="ddd-btn ddd-btn--close" (click)="showDetail = false">Close</button>
+        } @else {
+          <button class="ddd-btn ddd-btn--cancel" (click)="cancelEdit()" [disabled]="isSaving">Cancel</button>
+          <button class="ddd-btn ddd-btn--save" (click)="saveChanges()" [disabled]="isSaving">
+            <i class="pi" [ngClass]="isSaving ? 'pi-spin pi-spinner' : 'pi-check'"></i>
+            {{ isSaving ? 'Saving…' : 'Save & Update' }}
+          </button>
+        }
+      </div>
+
+    </div>
+  }
+
+</p-dialog>

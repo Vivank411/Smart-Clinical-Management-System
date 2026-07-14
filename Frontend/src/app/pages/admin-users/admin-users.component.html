@@ -1,0 +1,291 @@
+<div class="page-wrap">
+
+  <!-- Header -->
+  <div class="page-header">
+    <div>
+      <h1>User Management</h1>
+      <p>Manage system users and access controls</p>
+    </div>
+  </div>
+
+  <!-- Filter Bar -->
+  <div class="filter-bar">
+    <div class="search-box">
+      <i class="pi pi-search"></i>
+      <input type="text" placeholder="Search users…" [(ngModel)]="searchQuery" (ngModelChange)="onSearch()">
+    </div>
+    <select class="role-select" [(ngModel)]="roleFilter" (ngModelChange)="onSearch()">
+      <option value="">All Roles</option>
+      @for (r of roleOptions; track r) {
+        <option [value]="r">{{ r }}</option>
+      }
+    </select>
+    <button class="btn-create" (click)="openCreate()">
+      <i class="pi pi-plus"></i> Create User
+    </button>
+  </div>
+
+  <!-- Table Card -->
+  <div class="card">
+    <table class="um-table">
+      <thead>
+        <tr>
+          <th>#</th><th>USER</th><th>EMAIL</th><th>ROLE</th>
+          <th>STATUS</th><th>LAST LOGIN</th><th>ACTIONS</th>
+        </tr>
+      </thead>
+      <tbody>
+        @if (loading) {
+          <tr><td colspan="7" class="cell-center"><i class="pi pi-spin pi-spinner"></i> Loading…</td></tr>
+        } @else if (paginated.length === 0) {
+          <tr><td colspan="7" class="cell-center">No users found.</td></tr>
+        } @else {
+          @for (u of paginated; track u.id; let i = $index) {
+            <tr>
+              <td class="td-num">{{ (page - 1) * pageSize + i + 1 }}</td>
+              <td>
+                <div class="user-cell">
+                  <div class="av" [style.background]="avatarBg(u.name)">{{ initials(u.name) }}</div>
+                  <span class="u-name">{{ u.name }}</span>
+                </div>
+              </td>
+              <td class="td-email">{{ u.email }}</td>
+              <td><span class="role-badge {{ roleBadge(u.role) }}">{{ u.role }}</span></td>
+              <td>
+                <span class="status-badge" [class.sb--active]="u.isActive" [class.sb--inactive]="!u.isActive">
+                  {{ u.isActive ? 'Active' : 'Inactive' }}
+                </span>
+              </td>
+              <td class="td-login">—</td>
+              <td>
+                <div class="actions-cell">
+                  <!-- Edit -->
+                  <button class="act-btn" title="Edit User" (click)="openEdit(u, $event)">
+                    <i class="pi pi-pencil"></i>
+                  </button>
+                  <!-- Toggle active (reactivating emails a new temporary password) -->
+                  <button class="act-btn" [class.act-btn--danger]="u.isActive"
+                          [title]="u.isActive ? 'Disable' : 'Enable (emails a new password)'"
+                          (click)="toggleStatus(u, $event)">
+                    <i class="pi" [ngClass]="u.isActive ? 'pi-lock' : 'pi-lock-open'"></i>
+                  </button>
+                  <!-- Three-dots menu -->
+                  <div class="menu-wrap">
+                    <button class="act-btn" title="More options" (click)="toggleMenu(u.id, $event)">
+                      <i class="pi pi-ellipsis-v"></i>
+                    </button>
+                    @if (openMenuId === u.id) {
+                      <div class="drop-menu" (click)="$event.stopPropagation()">
+                        <button class="drop-item" (click)="openEdit(u, $event)">
+                          <i class="pi pi-pencil"></i> Edit User
+                        </button>
+                        <div class="drop-divider"></div>
+                        <button class="drop-item drop-item--danger" (click)="openDelete(u, $event)">
+                          <i class="pi pi-trash"></i> Delete User
+                        </button>
+                      </div>
+                    }
+                  </div>
+                </div>
+              </td>
+            </tr>
+          }
+        }
+      </tbody>
+    </table>
+
+    <!-- Footer -->
+    <div class="table-footer">
+      <span class="showing">
+        Showing {{ Math.min((page-1)*pageSize+1, filtered.length) }}
+        to {{ Math.min(page*pageSize, filtered.length) }}
+        of {{ filtered.length }} users
+      </span>
+      <div class="pager">
+        <button class="pg-btn" [disabled]="page===1" (click)="page=page-1">
+          <i class="pi pi-chevron-left"></i>
+        </button>
+        @for (n of pageNums; track n) {
+          <button class="pg-btn" [class.pg-btn--active]="page===n" (click)="page=n">{{ n }}</button>
+        }
+        <button class="pg-btn" [disabled]="page===totalPages" (click)="page=page+1">
+          <i class="pi pi-chevron-right"></i>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Legend -->
+  <div class="legend-bar">
+    <span class="legend-title">ACTIONS:</span>
+    <span class="legend-item"><i class="pi pi-pencil"></i> Edit</span>
+    <span class="legend-sep">·</span>
+    <span class="legend-item"><i class="pi pi-lock"></i> Disable / Enable</span>
+    <span class="legend-sep">·</span>
+    <span class="legend-item"><i class="pi pi-ellipsis-v"></i> More (Edit / Delete)</span>
+  </div>
+
+</div>
+
+<!-- ── Create User Modal ─────────────────────────────────────────────────── -->
+@if (showCreate) {
+  <div class="overlay" (click)="closeCreate()">
+    <div class="modal" (click)="$event.stopPropagation()">
+      <div class="modal-head">
+        <h3><i class="pi pi-user-plus"></i> Create New User</h3>
+        <button class="modal-x" (click)="closeCreate()"><i class="pi pi-times"></i></button>
+      </div>
+      <div class="modal-body">
+        <div class="form-row">
+          <div class="form-field">
+            <label>First Name <span class="req">*</span></label>
+            <input type="text" [(ngModel)]="form.firstName" placeholder="John">
+          </div>
+          <div class="form-field">
+            <label>Last Name <span class="req">*</span></label>
+            <input type="text" [(ngModel)]="form.lastName" placeholder="Doe">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label>Email <span class="req">*</span></label>
+            <input type="email" [(ngModel)]="form.email" placeholder="john.doe@example.com">
+          </div>
+          <div class="form-field">
+            <label>Phone Number</label>
+            <input type="text" [(ngModel)]="form.phone" placeholder="+91 98765 43210">
+          </div>
+        </div>
+        <div class="form-field">
+          <label>Role <span class="req">*</span></label>
+          <select [(ngModel)]="form.role">
+            @for (r of roleOptions; track r) { <option [value]="r">{{ r }}</option> }
+          </select>
+        </div>
+        @if (form.role === 'Doctor' || form.role === 'Junior Doctor') {
+          <div class="form-field">
+            <label>Specialization</label>
+            <input type="text" [(ngModel)]="form.specialization" placeholder="e.g. Cardiology">
+          </div>
+        }
+        <label class="check-label">
+          <input type="checkbox" [(ngModel)]="form.sendWelcomeEmail">
+          Send welcome email with temporary password
+        </label>
+        @if (createError) {
+          <div class="form-error"><i class="pi pi-exclamation-circle"></i> {{ createError }}</div>
+        }
+      </div>
+      <div class="modal-foot">
+        <button class="btn-cancel" (click)="closeCreate()">Cancel</button>
+        <button class="btn-primary" [disabled]="createLoading" (click)="submitCreate()">
+          @if (createLoading) { <i class="pi pi-spin pi-spinner"></i> } Create User
+        </button>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- ── Edit User Modal ───────────────────────────────────────────────────── -->
+@if (showEdit && editTarget) {
+  <div class="overlay" (click)="closeEdit()">
+    <div class="modal" (click)="$event.stopPropagation()">
+      <div class="modal-head">
+        <h3><i class="pi pi-pencil"></i> Edit User</h3>
+        <button class="modal-x" (click)="closeEdit()"><i class="pi pi-times"></i></button>
+      </div>
+      <div class="modal-body">
+        <!-- User badge -->
+        <div class="edit-user-bar">
+          <div class="av av--lg" [style.background]="avatarBg(editTarget.name)">{{ initials(editTarget.name) }}</div>
+          <div>
+            <div class="u-name">{{ editTarget.name }}</div>
+            <span class="role-badge {{ roleBadge(editTarget.role) }}">{{ editTarget.role }}</span>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-field">
+            <label>First Name <span class="req">*</span></label>
+            <input type="text" [(ngModel)]="editForm.firstName" placeholder="First name">
+          </div>
+          <div class="form-field">
+            <label>Last Name</label>
+            <input type="text" [(ngModel)]="editForm.lastName" placeholder="Last name">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label>Email <span class="req">*</span></label>
+            <input type="email" [(ngModel)]="editForm.email" placeholder="email@example.com">
+          </div>
+          <div class="form-field">
+            <label>Phone Number</label>
+            <input type="text" [(ngModel)]="editForm.phone" placeholder="+91 98765 43210">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label>Role</label>
+            <select [(ngModel)]="editForm.role">
+              @for (r of roleOptions; track r) { <option [value]="r">{{ r }}</option> }
+            </select>
+          </div>
+          @if (editForm.role === 'Doctor' || editForm.role === 'Junior Doctor') {
+            <div class="form-field">
+              <label>Specialization</label>
+              <input type="text" [(ngModel)]="editForm.specialization" placeholder="e.g. Cardiology">
+            </div>
+          }
+        </div>
+        @if (editError) {
+          <div class="form-error"><i class="pi pi-exclamation-circle"></i> {{ editError }}</div>
+        }
+      </div>
+      <div class="modal-foot">
+        <button class="btn-cancel" (click)="closeEdit()">Cancel</button>
+        <button class="btn-primary" [disabled]="editLoading" (click)="submitEdit()">
+          @if (editLoading) { <i class="pi pi-spin pi-spinner"></i> } Save Changes
+        </button>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- ── Delete Confirm Modal ──────────────────────────────────────────────── -->
+@if (showDelete && deleteTarget) {
+  <div class="overlay" (click)="closeDelete()">
+    <div class="modal modal--sm" (click)="$event.stopPropagation()">
+      <div class="modal-head">
+        <h3 class="del-head"><i class="pi pi-trash"></i> Delete User</h3>
+        <button class="modal-x" (click)="closeDelete()"><i class="pi pi-times"></i></button>
+      </div>
+      <div class="modal-body">
+        <div class="del-icon-wrap"><i class="pi pi-exclamation-triangle"></i></div>
+        <p class="del-msg">
+          Are you sure you want to delete <strong>{{ deleteTarget.name }}</strong>?<br>
+          <span class="del-email">{{ deleteTarget.email }}</span>
+        </p>
+        <p class="del-warn">This action cannot be undone. The user will lose access immediately.</p>
+      </div>
+      <div class="modal-foot">
+        <button class="btn-cancel" (click)="closeDelete()">Cancel</button>
+        <button class="btn-danger" [disabled]="deleteLoading" (click)="confirmDelete()">
+          @if (deleteLoading) { <i class="pi pi-spin pi-spinner"></i> } Delete User
+        </button>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- ── Success Toast ──────────────────────────────────────────────────────── -->
+@if (showSuccess) {
+  <div class="success-toast">
+    <div class="success-icon"><i class="pi pi-check-circle"></i></div>
+    <div class="success-body">
+      <strong>{{ successTitle }}</strong>
+      <p>{{ successMsg }} <span class="success-email">{{ successEmail }}</span></p>
+    </div>
+    <button class="modal-x" (click)="showSuccess=false"><i class="pi pi-times"></i></button>
+  </div>
+}

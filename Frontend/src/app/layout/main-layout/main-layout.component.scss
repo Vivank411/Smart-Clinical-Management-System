@@ -1,0 +1,109 @@
+.layout-wrapper {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Backdrop — shown on mobile when sidebar is open */
+.sidebar-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 299;
+  backdrop-filter: blur(2px);
+}
+
+/* Mobile topbar — hidden on desktop */
+.mobile-topbar {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 56px;
+  background: #0c3d3d;
+  z-index: 200;
+  align-items: center;
+  padding: 0 16px;
+  gap: 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+}
+
+.hamburger {
+  width: 38px;
+  height: 38px;
+  border: none;
+  background: rgba(255,255,255,0.1);
+  border-radius: 9px;
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.15s;
+  i { font-size: 16px; }
+  &:hover { background: rgba(255,255,255,0.18); }
+}
+
+.mobile-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+
+.mobile-brand-mark {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  i { color: #fff; font-size: 14px; }
+}
+
+.mobile-brand-name {
+  font-size: 15px;
+  font-weight: 800;
+  color: #fff;
+  letter-spacing: -0.3px;
+}
+
+.mobile-user-av {
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #0f8a7a, #0d6e6e);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid rgba(255,255,255,0.2);
+}
+
+.layout-content {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: #f0f4f8;
+  min-width: 0;
+}
+
+/* ── Tablet (≤ 1024px) ────────────────────────────────── */
+@media (max-width: 1024px) {
+  .mobile-topbar  { display: flex; }
+  .sidebar-backdrop { display: block; opacity: 0; pointer-events: none; transition: opacity 0.25s; }
+
+  .layout-content { padding-top: 56px; }
+
+  .sidebar-open {
+    .sidebar-backdrop { opacity: 1; pointer-events: all; }
+  }
+}

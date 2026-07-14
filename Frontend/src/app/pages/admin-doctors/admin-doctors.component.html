@@ -1,0 +1,370 @@
+<div class="page-wrap">
+
+  <!-- Header -->
+  <div class="page-header">
+    <div>
+      <h1>Doctor Management</h1>
+      <p>Manage doctor profiles, specializations and availability</p>
+    </div>
+    <div class="header-actions">
+      <div class="search-box">
+        <i class="pi pi-search"></i>
+        <input type="text" placeholder="Search doctors…" [(ngModel)]="searchQuery">
+      </div>
+      <button class="btn-add" (click)="openAdd()">
+        <i class="pi pi-plus"></i> Add Doctor
+      </button>
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-row">
+    <div class="stat-card">
+      <div class="stat-icon si--purple"><i class="pi pi-users"></i></div>
+      <div class="stat-body">
+        <span class="stat-label">TOTAL DOCTORS</span>
+        <span class="stat-val">{{ stats.total }}</span>
+        <span class="stat-sub">All registered</span>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon si--green"><i class="pi pi-user"></i></div>
+      <div class="stat-body">
+        <span class="stat-label">ACTIVE DOCTORS</span>
+        <span class="stat-val">{{ stats.active }}</span>
+        <span class="stat-sub">Currently active</span>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon si--red"><i class="pi pi-user-minus"></i></div>
+      <div class="stat-body">
+        <span class="stat-label">INACTIVE DOCTORS</span>
+        <span class="stat-val">{{ stats.inactive }}</span>
+        <span class="stat-sub">Unavailable</span>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon si--blue"><i class="pi pi-th-large"></i></div>
+      <div class="stat-body">
+        <span class="stat-label">SPECIALIZATIONS</span>
+        <span class="stat-val">{{ stats.specializations }}</span>
+        <span class="stat-sub">Different types</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Table Card -->
+  <div class="card">
+    <table class="dm-table">
+      <thead>
+        <tr>
+          <th>#</th><th>DOCTOR</th><th>SPECIALIZATION</th>
+          <th>STATUS</th><th>AVAILABLE TIME</th><th>ACTIONS</th>
+        </tr>
+      </thead>
+      <tbody>
+        @if (loading) {
+          <tr><td colspan="6" class="cell-center"><i class="pi pi-spin pi-spinner"></i> Loading…</td></tr>
+        } @else if (filtered.length === 0) {
+          <tr><td colspan="6" class="cell-center">No doctors found.</td></tr>
+        } @else {
+          @for (d of filtered; track d.id; let i = $index) {
+            <tr [class.tr--selected]="selected?.id === d.id" (click)="selectDoctor(d)">
+              <td class="td-num">{{ i + 1 }}</td>
+              <td>
+                <div class="doc-cell">
+                  <div class="av" [style.background]="avatarBg(d.name)">{{ initials(d.name) }}</div>
+                  <span class="doc-name">{{ d.name }}</span>
+                </div>
+              </td>
+              <td class="td-spec">{{ d.specialization }}</td>
+              <td>
+                <span class="status-badge" [class.sb--active]="d.is_active" [class.sb--inactive]="!d.is_active">
+                  {{ d.is_active ? 'Active' : 'Inactive' }}
+                </span>
+              </td>
+              <td class="td-time">{{ d.available_from ?? '09:00 AM' }} – {{ d.available_to ?? '05:00 PM' }}</td>
+              <td>
+                <div class="actions-cell">
+                  <button class="act-btn" title="Edit" (click)="openEdit(d, $event)">
+                    <i class="pi pi-pencil"></i>
+                  </button>
+                  <div class="kebab-wrap">
+                    <button class="act-btn" title="More" [class.act-btn--open]="menuOpenId === d.id"
+                            (click)="toggleMenu(d, $event)">
+                      <i class="pi pi-ellipsis-v"></i>
+                    </button>
+                    @if (menuOpenId === d.id) {
+                      <div class="kebab-menu" (click)="$event.stopPropagation()">
+                        <button class="kebab-item" (click)="openEdit(d, $event); closeMenu()">
+                          <i class="pi pi-pencil"></i> Edit Profile
+                        </button>
+                        <button class="kebab-item" (click)="toggleStatus(d, $event); closeMenu()">
+                          <i class="pi" [ngClass]="d.is_active ? 'pi-ban' : 'pi-check-circle'"></i>
+                          {{ d.is_active ? 'Deactivate' : 'Activate' }}
+                        </button>
+                        <div class="kebab-sep"></div>
+                        <button class="kebab-item kebab-item--danger" (click)="openDelete(d, $event)">
+                          <i class="pi pi-trash"></i> Delete Doctor
+                        </button>
+                      </div>
+                    }
+                  </div>
+                </div>
+              </td>
+            </tr>
+          }
+        }
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Doctor Detail Panel -->
+  @if (selected) {
+    <div class="detail-card">
+      <!-- Left: Profile info -->
+      <div class="detail-left">
+        <div class="detail-identity">
+          <div class="detail-av" [style.background]="avatarBg(selected.name)">{{ initials(selected.name) }}</div>
+          <div>
+            <div class="detail-name">{{ selected.name }}</div>
+            <div class="detail-spec">{{ selected.specialization }}</div>
+            <span class="status-badge mt4" [class.sb--active]="selected.is_active" [class.sb--inactive]="!selected.is_active">
+              {{ selected.is_active ? 'Active' : 'Inactive' }}
+            </span>
+          </div>
+        </div>
+
+        <div class="info-grid">
+          <div class="info-item">
+            <i class="pi pi-envelope"></i>
+            <div><span class="info-label">Email</span><span class="info-val">{{ selected.email ?? '—' }}</span></div>
+          </div>
+          <div class="info-item">
+            <i class="pi pi-phone"></i>
+            <div><span class="info-label">Phone</span><span class="info-val">{{ selected.phone ?? '—' }}</span></div>
+          </div>
+          <div class="info-item">
+            <i class="pi pi-id-card"></i>
+            <div><span class="info-label">Role</span><span class="info-val">{{ selected.role }}</span></div>
+          </div>
+          <div class="info-item">
+            <i class="pi pi-star"></i>
+            <div><span class="info-label">Experience</span><span class="info-val">—</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Middle: Availability -->
+      <div class="detail-mid">
+        <div class="avail-section">
+          <div class="avail-label">Available Days</div>
+          <div class="days-row">
+            @for (day of availDays; track day) {
+              <span class="day-chip">{{ day }}</span>
+            }
+          </div>
+        </div>
+        <div class="avail-section">
+          <div class="avail-label">Available Time</div>
+          <div class="avail-val">{{ selected.available_from ?? '09:00 AM' }} – {{ selected.available_to ?? '05:00 PM' }}</div>
+        </div>
+        <div class="avail-row">
+          <div class="avail-section">
+            <div class="avail-label">Consultation Fee</div>
+            <div class="avail-val">—</div>
+          </div>
+          <div class="avail-section">
+            <div class="avail-label">Status</div>
+            <span class="status-badge mt0" [class.sb--active]="selected.is_active" [class.sb--inactive]="!selected.is_active">
+              {{ selected.is_active ? 'Active' : 'Inactive' }}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: Actions -->
+      <div class="detail-right">
+        <div class="detail-actions-label">ACTIONS</div>
+        <button class="detail-action" (click)="openEdit(selected!, $event)">
+          <i class="pi pi-pencil"></i> Edit Profile
+        </button>
+        <button class="detail-action" (click)="openEdit(selected!, $event)">
+          <i class="pi pi-clock"></i> Manage Availability
+        </button>
+        <button class="detail-action detail-action--danger" (click)="toggleStatus(selected!, $event)">
+          <i class="pi" [ngClass]="selected.is_active ? 'pi-ban' : 'pi-check-circle'"></i>
+          {{ selected.is_active ? 'Deactivate Doctor' : 'Activate Doctor' }}
+        </button>
+        <button class="detail-action detail-action--placeholder">
+          <i class="pi pi-history"></i> View History
+        </button>
+      </div>
+    </div>
+  }
+
+</div>
+
+<!-- ── Add Doctor Modal ────────────────────────────────────────────────────── -->
+@if (showAdd) {
+  <div class="overlay" (click)="closeAdd()">
+    <div class="modal" (click)="$event.stopPropagation()">
+      <div class="modal-head">
+        <h3>Add New Doctor</h3>
+        <button class="modal-x" (click)="closeAdd()"><i class="pi pi-times"></i></button>
+      </div>
+      <div class="modal-body">
+        <div class="form-field">
+          <label>Full Name <span class="req">*</span></label>
+          <input type="text" [(ngModel)]="addForm.name" placeholder="Dr. John Smith">
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label>Specialization <span class="req">*</span></label>
+            <select [(ngModel)]="addForm.specialization">
+              <option value="">Select…</option>
+              @for (s of specOptions; track s) { <option [value]="s">{{ s }}</option> }
+            </select>
+          </div>
+          <div class="form-field">
+            <label>Role</label>
+            <select [(ngModel)]="addForm.role">
+              @for (r of roleOptions; track r) { <option [value]="r">{{ r }}</option> }
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label>Email</label>
+            <input type="email" [(ngModel)]="addForm.email" placeholder="dr.john@mediclinic.com">
+          </div>
+          <div class="form-field">
+            <label>Phone</label>
+            <input type="text" [(ngModel)]="addForm.phone" placeholder="+91 98765 43210">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label>Available From</label>
+            <select [(ngModel)]="addForm.available_from">
+              @for (t of timeSlots; track t) { <option [value]="t">{{ t }}</option> }
+            </select>
+          </div>
+          <div class="form-field">
+            <label>Available To</label>
+            <select [(ngModel)]="addForm.available_to">
+              @for (t of timeSlots; track t) { <option [value]="t">{{ t }}</option> }
+            </select>
+          </div>
+        </div>
+        @if (addError) {
+          <div class="form-error"><i class="pi pi-exclamation-circle"></i> {{ addError }}</div>
+        }
+      </div>
+      <div class="modal-foot">
+        <button class="btn-cancel" (click)="closeAdd()">Cancel</button>
+        <button class="btn-primary" [disabled]="addLoading" (click)="submitAdd()">
+          @if (addLoading) { <i class="pi pi-spin pi-spinner"></i> } Add Doctor
+        </button>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- ── Edit Doctor Modal ───────────────────────────────────────────────────── -->
+@if (showEdit) {
+  <div class="overlay" (click)="closeEdit()">
+    <div class="modal" (click)="$event.stopPropagation()">
+      <div class="modal-head">
+        <h3>Edit Doctor</h3>
+        <button class="modal-x" (click)="closeEdit()"><i class="pi pi-times"></i></button>
+      </div>
+      <div class="modal-body">
+        <div class="form-field">
+          <label>Full Name <span class="req">*</span></label>
+          <input type="text" [(ngModel)]="editForm.name" placeholder="Dr. John Smith">
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label>Specialization <span class="req">*</span></label>
+            <select [(ngModel)]="editForm.specialization">
+              @for (s of specOptions; track s) { <option [value]="s">{{ s }}</option> }
+            </select>
+          </div>
+          <div class="form-field">
+            <label>Role</label>
+            <select [(ngModel)]="editForm.role">
+              @for (r of roleOptions; track r) { <option [value]="r">{{ r }}</option> }
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label>Email</label>
+            <input type="email" [(ngModel)]="editForm.email">
+          </div>
+          <div class="form-field">
+            <label>Phone</label>
+            <input type="text" [(ngModel)]="editForm.phone">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label>Available From</label>
+            <select [(ngModel)]="editForm.available_from">
+              @for (t of timeSlots; track t) { <option [value]="t">{{ t }}</option> }
+            </select>
+          </div>
+          <div class="form-field">
+            <label>Available To</label>
+            <select [(ngModel)]="editForm.available_to">
+              @for (t of timeSlots; track t) { <option [value]="t">{{ t }}</option> }
+            </select>
+          </div>
+        </div>
+        @if (editError) {
+          <div class="form-error"><i class="pi pi-exclamation-circle"></i> {{ editError }}</div>
+        }
+      </div>
+      <div class="modal-foot">
+        <button class="btn-cancel" (click)="closeEdit()">Cancel</button>
+        <button class="btn-primary" [disabled]="editLoading" (click)="submitEdit()">
+          @if (editLoading) { <i class="pi pi-spin pi-spinner"></i> } Save Changes
+        </button>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- ── Delete Doctor Confirmation ───────────────────────────────────────────── -->
+@if (showDelete) {
+  <div class="overlay" (click)="closeDelete()">
+    <div class="modal modal--sm" (click)="$event.stopPropagation()">
+      <div class="modal-head">
+        <h3>Delete Doctor</h3>
+        <button class="modal-x" (click)="closeDelete()"><i class="pi pi-times"></i></button>
+      </div>
+      <div class="modal-body">
+        <div class="delete-warn">
+          <div class="delete-warn-icon"><i class="pi pi-exclamation-triangle"></i></div>
+          <div>
+            <p class="delete-warn-title">Are you sure you want to delete this doctor?</p>
+            <p class="delete-warn-text">
+              <strong>{{ deleteTarget?.name }}</strong> ({{ deleteTarget?.specialization }}) will be
+              permanently removed. This action cannot be undone.
+            </p>
+          </div>
+        </div>
+        @if (deleteError) {
+          <div class="form-error"><i class="pi pi-exclamation-circle"></i> {{ deleteError }}</div>
+        }
+      </div>
+      <div class="modal-foot">
+        <button class="btn-cancel" (click)="closeDelete()">Cancel</button>
+        <button class="btn-danger" [disabled]="deleteLoading" (click)="confirmDelete()">
+          @if (deleteLoading) { <i class="pi pi-spin pi-spinner"></i> } Delete
+        </button>
+      </div>
+    </div>
+  </div>
+}

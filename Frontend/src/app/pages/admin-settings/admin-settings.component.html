@@ -1,0 +1,524 @@
+<div class="page-wrap">
+
+  <!-- Header -->
+  <div class="page-header">
+    <div>
+      <h1>System Settings</h1>
+      <p>Manage system preferences and configurations</p>
+    </div>
+    <div class="header-right">
+      <div class="search-box"><i class="pi pi-search"></i><input type="text" placeholder="Search settings…"></div>
+    </div>
+  </div>
+
+  <div class="settings-layout">
+
+    <!-- Left Sidebar -->
+    <div class="settings-nav">
+      @for (s of sections; track s.id) {
+        <button class="nav-item" [class.nav-item--active]="activeSection === s.id" (click)="activeSection = s.id">
+          <i class="pi" [ngClass]="s.icon"></i>
+          <span>{{ s.label }}</span>
+        </button>
+      }
+    </div>
+
+    <!-- Main Content -->
+    <div class="settings-main">
+      @if (activeSection === 'general') {
+        <div class="section-head">
+          <h2>General Settings</h2>
+          <p>Configure basic system information and preferences.</p>
+        </div>
+
+        <!-- System Info -->
+        <div class="form-section">
+          <div class="form-row">
+            <div class="form-field">
+              <label>System Name</label>
+              <input type="text" [(ngModel)]="general.systemName">
+            </div>
+            <div class="form-field">
+              <label>System Tagline</label>
+              <input type="text" [(ngModel)]="general.systemTagline">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-field">
+              <label>Organization Name</label>
+              <input type="text" [(ngModel)]="general.orgName">
+            </div>
+            <div class="form-field">
+              <label>Contact Email</label>
+              <input type="email" [(ngModel)]="general.contactEmail">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-field">
+              <label>Contact Phone</label>
+              <input type="text" [(ngModel)]="general.contactPhone">
+            </div>
+            <div class="form-field">
+              <label>Timezone</label>
+              <select [(ngModel)]="general.timezone">
+                <option value="(GMT+05:30) Asia/Kolkata">(GMT+05:30) Asia/Kolkata</option>
+                <option value="(GMT+00:00) UTC">(GMT+00:00) UTC</option>
+                <option value="(GMT-05:00) US/Eastern">(GMT-05:00) US/Eastern</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-field">
+              <label>Date Format</label>
+              <select [(ngModel)]="general.dateFormat">
+                <option value="DD MMM, YYYY (19 Jun, 2026)">DD MMM, YYYY (19 Jun, 2026)</option>
+                <option value="MM/DD/YYYY">MM/DD/YYYY</option>
+                <option value="YYYY-MM-DD">YYYY-MM-DD</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label>Time Format</label>
+              <select [(ngModel)]="general.timeFormat">
+                <option value="12 Hour (02:30 PM)">12 Hour (02:30 PM)</option>
+                <option value="24 Hour (14:30)">24 Hour (14:30)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- System Logo -->
+        <div class="form-section">
+          <div class="section-label">System Logo</div>
+          <div class="logo-row">
+            <div class="logo-preview">
+              <div class="logo-icon"><i class="pi pi-heart" style="color:#0d6e6e;font-size:28px"></i></div>
+              <div>
+                <div class="logo-name">MediClinic</div>
+                <div class="logo-hint">Recommended size: 200 x 60px<br>JPG, PNG or SVG. Max size 1MB.</div>
+              </div>
+            </div>
+            <div class="logo-actions">
+              <button class="btn-upload"><i class="pi pi-upload"></i> Change Logo</button>
+              <button class="btn-remove">Remove</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Toggles -->
+        <div class="form-section">
+          <div class="toggle-row">
+            <div>
+              <div class="toggle-label">Enable Registration</div>
+              <div class="toggle-sub">Allow new users and doctors to register in the system.</div>
+            </div>
+            <div class="toggle-wrap" [class.tog--on]="general.enableRegistration" (click)="toggleGeneral('enableRegistration')">
+              <div class="tog-thumb"></div>
+            </div>
+          </div>
+          <div class="toggle-row">
+            <div>
+              <div class="toggle-label">Maintenance Mode</div>
+              <div class="toggle-sub">Temporarily disable access to the system for maintenance.</div>
+            </div>
+            <div class="toggle-wrap" [class.tog--on]="general.maintenanceMode" (click)="toggleGeneral('maintenanceMode')">
+              <div class="tog-thumb"></div>
+            </div>
+          </div>
+          @if (general.maintenanceMode) {
+            <div class="maint-note">
+              <i class="pi pi-exclamation-triangle"></i>
+              Maintenance mode is <strong>ON</strong> — new logins and registrations will be restricted.
+            </div>
+          }
+        </div>
+
+        <!-- Save -->
+        <div class="save-row">
+          @if (showSaved) {
+            <span class="saved-msg"><i class="pi pi-check-circle"></i> Changes saved successfully!</span>
+          }
+          <button class="btn-save" [disabled]="saveLoading" (click)="saveChanges()">
+            @if (saveLoading) { <i class="pi pi-spin pi-spinner"></i> } Save Changes
+          </button>
+        </div>
+
+      } @else if (activeSection === 'notifications') {
+        <div class="section-head">
+          <h2>Notification Settings</h2>
+          <p>Choose how staff and patients are notified per event, and configure the email &amp; SMS channels.</p>
+        </div>
+
+        <div class="form-section">
+          <div class="form-row">
+            <div class="form-field">
+              <label>Appointment Reminder Lead Time</label>
+              <select [(ngModel)]="notifications.reminderLeadTime">
+                <option value="1 Hour">1 Hour before</option>
+                <option value="3 Hours">3 Hours before</option>
+                <option value="12 Hours">12 Hours before</option>
+                <option value="24 Hours">24 Hours before</option>
+                <option value="48 Hours">48 Hours before</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <div class="section-label">Notification Events</div>
+          <div class="notif-head">
+            <span class="notif-head-event">Event</span>
+            <div class="notif-cols">
+              <span>In-App</span><span>Email</span><span>SMS</span>
+            </div>
+          </div>
+          @for (ev of notifications.events; track ev.id) {
+            <div class="notif-row">
+              <div class="notif-info">
+                <div class="toggle-label">{{ ev.label }}</div>
+                <div class="toggle-sub">{{ ev.sub }}</div>
+              </div>
+              <div class="notif-cols">
+                <div class="toggle-wrap toggle-wrap--sm" [class.tog--on]="ev.inApp" (click)="ev.inApp = !ev.inApp"><div class="tog-thumb"></div></div>
+                <div class="toggle-wrap toggle-wrap--sm" [class.tog--on]="ev.email" (click)="ev.email = !ev.email"><div class="tog-thumb"></div></div>
+                <div class="toggle-wrap toggle-wrap--sm" [class.tog--on]="ev.sms" (click)="ev.sms = !ev.sms"><div class="tog-thumb"></div></div>
+              </div>
+            </div>
+          }
+        </div>
+
+        <!-- ── Email channel ─────────────────────────────────────────────── -->
+        <div class="channel-head"><i class="pi pi-envelope"></i> Email Channel</div>
+
+        <div class="form-section">
+          <div class="toggle-row">
+            <div>
+              <div class="toggle-label">Enable Email Notifications</div>
+              <div class="toggle-sub">Send transactional emails such as welcome, password and appointment messages.</div>
+            </div>
+            <div class="toggle-wrap" [class.tog--on]="email.enabled" (click)="email.enabled = !email.enabled"><div class="tog-thumb"></div></div>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <div class="section-label">SMTP Server</div>
+          <div class="form-row">
+            <div class="form-field"><label>SMTP Host</label><input type="text" [(ngModel)]="email.smtpHost" placeholder="smtp.example.com"></div>
+            <div class="form-field"><label>SMTP Port</label><input type="text" [(ngModel)]="email.smtpPort" placeholder="587"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-field">
+              <label>Encryption</label>
+              <select [(ngModel)]="email.encryption">
+                <option value="None">None</option>
+                <option value="TLS">TLS / STARTTLS</option>
+                <option value="SSL">SSL</option>
+              </select>
+            </div>
+            <div class="form-field"><label>SMTP Username</label><input type="text" [(ngModel)]="email.username" placeholder="username or API key"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-field"><label>SMTP Password</label><input type="password" [(ngModel)]="email.password" placeholder="••••••••••"></div>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <div class="section-label">Sender Identity</div>
+          <div class="form-row">
+            <div class="form-field"><label>From Name</label><input type="text" [(ngModel)]="email.fromName"></div>
+            <div class="form-field"><label>From Email</label><input type="email" [(ngModel)]="email.fromEmail"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-field"><label>Reply-To Email</label><input type="email" [(ngModel)]="email.replyTo"></div>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <div class="section-label">Automated Emails</div>
+          <div class="toggle-row">
+            <div>
+              <div class="toggle-label">Welcome Email</div>
+              <div class="toggle-sub">Send login credentials when a new user account is created.</div>
+            </div>
+            <div class="toggle-wrap" [class.tog--on]="email.sendWelcome" (click)="email.sendWelcome = !email.sendWelcome"><div class="tog-thumb"></div></div>
+          </div>
+          <div class="toggle-row">
+            <div>
+              <div class="toggle-label">Password Reset &amp; Reactivation</div>
+              <div class="toggle-sub">Email a new temporary password when an account is reactivated.</div>
+            </div>
+            <div class="toggle-wrap" [class.tog--on]="email.sendReset" (click)="email.sendReset = !email.sendReset"><div class="tog-thumb"></div></div>
+          </div>
+          <div class="toggle-row">
+            <div>
+              <div class="toggle-label">Appointment Confirmation</div>
+              <div class="toggle-sub">Notify patients by email when they are checked in for a visit.</div>
+            </div>
+            <div class="toggle-wrap" [class.tog--on]="email.sendAppointment" (click)="email.sendAppointment = !email.sendAppointment"><div class="tog-thumb"></div></div>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <div class="section-label">Send Test Email</div>
+          <div class="inline-row">
+            <input class="inline-input" type="email" [(ngModel)]="email.testTo" placeholder="recipient@example.com" (ngModelChange)="testEmailStatus=''">
+            <button class="btn-upload" (click)="sendTestEmail()" [disabled]="testEmailStatus==='sending'">
+              <i class="pi" [ngClass]="testEmailStatus==='sending' ? 'pi-spin pi-spinner' : 'pi-send'"></i> Send Test
+            </button>
+          </div>
+          @if (testEmailStatus==='sent') { <span class="test-msg test-msg--ok"><i class="pi pi-check-circle"></i> Test email sent to {{ email.testTo }}.</span> }
+          @if (testEmailStatus==='error') { <span class="test-msg test-msg--err"><i class="pi pi-exclamation-circle"></i> Enter a recipient and configure the SMTP host first.</span> }
+        </div>
+
+        <!-- ── SMS channel ───────────────────────────────────────────────── -->
+        <div class="channel-head"><i class="pi pi-comment"></i> SMS Channel</div>
+
+        <div class="form-section">
+          <div class="toggle-row">
+            <div>
+              <div class="toggle-label">Enable SMS Notifications</div>
+              <div class="toggle-sub">Master switch for all outgoing text messages.</div>
+            </div>
+            <div class="toggle-wrap" [class.tog--on]="sms.enabled" (click)="sms.enabled = !sms.enabled"><div class="tog-thumb"></div></div>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <div class="section-label">Gateway Configuration</div>
+          <div class="form-row">
+            <div class="form-field">
+              <label>Provider</label>
+              <select [(ngModel)]="sms.provider">
+                @for (p of smsProviders; track p) { <option [value]="p">{{ p }}</option> }
+              </select>
+            </div>
+            <div class="form-field"><label>Sender ID</label><input type="text" [(ngModel)]="sms.senderId" placeholder="MEDCLN" maxlength="11"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-field"><label>API Key / Auth Token</label><input type="password" [(ngModel)]="sms.apiKey" placeholder="••••••••••"></div>
+          </div>
+          <p class="field-hint">Sender ID is limited to 11 characters for most gateways.</p>
+        </div>
+
+        <div class="form-section">
+          <div class="section-label">Message Types</div>
+          <div class="toggle-row">
+            <div>
+              <div class="toggle-label">Appointment Reminders</div>
+              <div class="toggle-sub">Text patients ahead of their scheduled visit.</div>
+            </div>
+            <div class="toggle-wrap" [class.tog--on]="sms.reminders" (click)="sms.reminders = !sms.reminders"><div class="tog-thumb"></div></div>
+          </div>
+          <div class="toggle-row">
+            <div>
+              <div class="toggle-label">OTP Verification</div>
+              <div class="toggle-sub">Send one-time passwords for login and verification.</div>
+            </div>
+            <div class="toggle-wrap" [class.tog--on]="sms.otp" (click)="sms.otp = !sms.otp"><div class="tog-thumb"></div></div>
+          </div>
+          <div class="toggle-row">
+            <div>
+              <div class="toggle-label">Queue / Token Updates</div>
+              <div class="toggle-sub">Notify patients when their queue token is called.</div>
+            </div>
+            <div class="toggle-wrap" [class.tog--on]="sms.queueUpdates" (click)="sms.queueUpdates = !sms.queueUpdates"><div class="tog-thumb"></div></div>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <div class="section-label">Send Test SMS</div>
+          <div class="inline-row">
+            <input class="inline-input" type="tel" [(ngModel)]="sms.testTo" placeholder="+91 98765 43210" (ngModelChange)="testSmsStatus=''">
+            <button class="btn-upload" (click)="sendTestSms()" [disabled]="testSmsStatus==='sending'">
+              <i class="pi" [ngClass]="testSmsStatus==='sending' ? 'pi-spin pi-spinner' : 'pi-send'"></i> Send Test
+            </button>
+          </div>
+          @if (testSmsStatus==='sent') { <span class="test-msg test-msg--ok"><i class="pi pi-check-circle"></i> Test SMS sent to {{ sms.testTo }}.</span> }
+          @if (testSmsStatus==='error') { <span class="test-msg test-msg--err"><i class="pi pi-exclamation-circle"></i> Enter a number and gateway API key first.</span> }
+        </div>
+
+        <div class="save-row">
+          @if (showSaved) { <span class="saved-msg"><i class="pi pi-check-circle"></i> Changes saved successfully!</span> }
+          <button class="btn-save" [disabled]="saveLoading" (click)="saveChanges()">
+            @if (saveLoading) { <i class="pi pi-spin pi-spinner"></i> } Save Changes
+          </button>
+        </div>
+
+      } @else if (activeSection === 'appointments') {
+        <div class="section-head">
+          <h2>Appointment Settings</h2>
+          <p>Define scheduling rules, working hours and booking policies.</p>
+        </div>
+
+        <div class="form-section">
+          <div class="section-label">Scheduling</div>
+          <div class="form-row">
+            <div class="form-field">
+              <label>Default Duration (minutes)</label>
+              <select [(ngModel)]="appointments.defaultDuration">
+                <option value="15">15 minutes</option>
+                <option value="20">20 minutes</option>
+                <option value="30">30 minutes</option>
+                <option value="45">45 minutes</option>
+                <option value="60">60 minutes</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label>Buffer Between Visits (minutes)</label>
+              <select [(ngModel)]="appointments.bufferTime">
+                <option value="0">No buffer</option>
+                <option value="5">5 minutes</option>
+                <option value="10">10 minutes</option>
+                <option value="15">15 minutes</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-field">
+              <label>Slot Interval (minutes)</label>
+              <select [(ngModel)]="appointments.slotInterval">
+                <option value="15">Every 15 minutes</option>
+                <option value="20">Every 20 minutes</option>
+                <option value="30">Every 30 minutes</option>
+                <option value="60">Every 60 minutes</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label>Max Patients per Slot</label>
+              <select [(ngModel)]="appointments.maxPerSlot">
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+                <option value="5">5</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <div class="section-label">Working Hours</div>
+          <div class="form-row">
+            <div class="form-field">
+              <label>Opens At</label>
+              <select [(ngModel)]="appointments.workStart">
+                @for (t of timeSlots; track t) { <option [value]="t">{{ t }}</option> }
+              </select>
+            </div>
+            <div class="form-field">
+              <label>Closes At</label>
+              <select [(ngModel)]="appointments.workEnd">
+                @for (t of timeSlots; track t) { <option [value]="t">{{ t }}</option> }
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <div class="section-label">Working Days</div>
+          <div class="days-row">
+            @for (d of weekDays; track d) {
+              <button type="button" class="day-toggle" [class.day-toggle--on]="appointments.workingDays[d]" (click)="toggleDay(d)">{{ d }}</button>
+            }
+          </div>
+        </div>
+
+        <div class="form-section">
+          <div class="section-label">Booking Policy</div>
+          <div class="form-row">
+            <div class="form-field">
+              <label>Max Advance Booking (days)</label>
+              <select [(ngModel)]="appointments.maxAdvanceDays">
+                <option value="7">7 days</option>
+                <option value="14">14 days</option>
+                <option value="30">30 days</option>
+                <option value="60">60 days</option>
+                <option value="90">90 days</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label>Cancellation Window (hours)</label>
+              <select [(ngModel)]="appointments.cancellationWindow">
+                <option value="1">1 hour before</option>
+                <option value="2">2 hours before</option>
+                <option value="4">4 hours before</option>
+                <option value="12">12 hours before</option>
+                <option value="24">24 hours before</option>
+              </select>
+            </div>
+          </div>
+          <div class="toggle-row">
+            <div>
+              <div class="toggle-label">Allow Online Booking</div>
+              <div class="toggle-sub">Let patients request appointments without calling the clinic.</div>
+            </div>
+            <div class="toggle-wrap" [class.tog--on]="appointments.allowOnlineBooking" (click)="appointments.allowOnlineBooking = !appointments.allowOnlineBooking"><div class="tog-thumb"></div></div>
+          </div>
+          <div class="toggle-row">
+            <div>
+              <div class="toggle-label">Auto-Confirm Appointments</div>
+              <div class="toggle-sub">Automatically confirm bookings without manual approval.</div>
+            </div>
+            <div class="toggle-wrap" [class.tog--on]="appointments.autoConfirm" (click)="appointments.autoConfirm = !appointments.autoConfirm"><div class="tog-thumb"></div></div>
+          </div>
+          <div class="toggle-row">
+            <div>
+              <div class="toggle-label">Allow Cancellation</div>
+              <div class="toggle-sub">Permit patients to cancel within the window set above.</div>
+            </div>
+            <div class="toggle-wrap" [class.tog--on]="appointments.allowCancellation" (click)="appointments.allowCancellation = !appointments.allowCancellation"><div class="tog-thumb"></div></div>
+          </div>
+        </div>
+
+        <div class="save-row">
+          @if (showSaved) { <span class="saved-msg"><i class="pi pi-check-circle"></i> Changes saved successfully!</span> }
+          <button class="btn-save" [disabled]="saveLoading" (click)="saveChanges()">
+            @if (saveLoading) { <i class="pi pi-spin pi-spinner"></i> } Save Changes
+          </button>
+        </div>
+      }
+    </div>
+
+    <!-- Right Overview Panel -->
+    <div class="settings-right">
+
+      <div class="overview-card">
+        <div class="ov-title">System Overview</div>
+        <div class="ov-rows">
+          <div class="ov-row"><span class="ov-key">System Version</span><span class="ov-val">{{ overview.version }}</span></div>
+          <div class="ov-row"><span class="ov-key">Last Updated</span><span class="ov-val">{{ overview.lastUpdated }}</span></div>
+          <div class="ov-row"><span class="ov-key">Total Users</span><span class="ov-val">{{ overview.totalUsers }}</span></div>
+          <div class="ov-row"><span class="ov-key">Active Sessions</span><span class="ov-val">{{ overview.activeSessions }}</span></div>
+          <div class="ov-row"><span class="ov-key">Database Size</span><span class="ov-val">{{ overview.dbSize }}</span></div>
+          <div class="ov-row"><span class="ov-key">Storage Used</span><span class="ov-val">{{ overview.storageUsed }}</span></div>
+        </div>
+      </div>
+
+      <div class="overview-card">
+        <div class="ov-title">Backup Status</div>
+        <div class="backup-row">
+          <i class="pi pi-check-circle" style="color:#16a34a;font-size:18px"></i>
+          <div>
+            <div class="backup-label">Last Backup</div>
+            <div class="backup-val">{{ backupLast }}</div>
+          </div>
+        </div>
+        <div class="backup-row">
+          <i class="pi pi-clock" style="color:#94a3b8;font-size:18px"></i>
+          <div>
+            <div class="backup-label">Next Backup</div>
+            <div class="backup-val">{{ backupNext }}</div>
+          </div>
+        </div>
+        @if (backupDone) {
+          <div class="backup-done"><i class="pi pi-check-circle"></i> Backup completed successfully.</div>
+        }
+        <button class="btn-backup" (click)="runBackup()" [disabled]="isBackingUp">
+          <i class="pi" [ngClass]="isBackingUp ? 'pi-spin pi-spinner' : 'pi-cloud-upload'"></i>
+          {{ isBackingUp ? 'Backing up…' : 'Backup Now' }}
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+</div>

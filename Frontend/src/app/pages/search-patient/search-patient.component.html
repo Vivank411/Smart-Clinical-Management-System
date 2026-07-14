@@ -1,0 +1,385 @@
+<div class="sp-page">
+
+  <!-- Page Header -->
+  <header class="sp-header">
+    <div class="sp-header-left">
+      <h1 class="sp-title">Search Patient</h1>
+      <p class="sp-sub">Search existing patients to view their details</p>
+    </div>
+  </header>
+
+  <!-- Search Bar -->
+  <div class="search-card">
+    <div class="search-input-row">
+      <div class="search-input-wrap">
+        <i class="pi pi-search search-icon"></i>
+        <p-autocomplete
+          [(ngModel)]="searchValue"
+          [suggestions]="suggestions"
+          (completeMethod)="filterSuggestions($event)"
+          (onSelect)="onPatientSelect($event)"
+          field="name"
+          [forceSelection]="false"
+          [minLength]="1"
+          appendTo="body"
+          placeholder="Search by Patient ID, Name or Mobile Number…"
+          styleClass="sp-autocomplete"
+          panelStyleClass="sp-patient-panel"
+          inputStyleClass="sp-ac-input">
+          <ng-template pTemplate="item" let-p>
+            <div class="ac-item">
+              <div class="ac-avatar">{{ p.name[0] }}</div>
+              <div class="ac-detail">
+                <span class="ac-name">{{ p.name }}</span>
+                <span class="ac-meta">{{ p.id }} &nbsp;·&nbsp; {{ p.mobile }}</span>
+              </div>
+              <span class="ac-age">{{ p.age }}Y · {{ p.gender }}</span>
+            </div>
+          </ng-template>
+        </p-autocomplete>
+        @if (searchValue) {
+          <button class="clear-icon-btn" (click)="clear()"><i class="pi pi-times"></i></button>
+        }
+      </div>
+
+      <button class="btn-search" (click)="search()">Search</button>
+    </div>
+  </div>
+
+  <!-- Results Section -->
+  <div class="results-section">
+    <div class="results-header">
+      <div>
+        <h2 class="results-title">Search Results</h2>
+        <p class="results-count">
+          {{ filteredPatients.length }} matching result{{ filteredPatients.length !== 1 ? 's' : '' }} found
+        </p>
+      </div>
+      <button class="btn-add-patient" routerLink="/patient-registration">
+        <i class="pi pi-user-plus"></i> Add New Patient
+      </button>
+    </div>
+
+    @if (filteredPatients.length > 0) {
+      <div class="table-scroll">
+        <table class="mc-table">
+          <thead>
+            <tr>
+              <th>Patient ID</th>
+              <th>Patient Name</th>
+              <th>Mobile Number</th>
+              <th>Age / Gender</th>
+              <th>Last Visit</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (p of paginatedResults; track p.id) {
+              <tr>
+                <td><span class="pid-badge">{{ p.id }}</span></td>
+                <td><span class="pt-name">{{ p.name }}</span></td>
+                <td class="col-muted">{{ p.mobile }}</td>
+                <td class="col-muted">{{ p.age }} Y / {{ p.gender }}</td>
+                <td class="col-muted">{{ p.lastVisit }}</td>
+                <td>
+                  <div class="action-cell">
+                    <button class="act-btn act-btn--view" (click)="viewDetails(p)">
+                      <i class="pi pi-eye"></i> View Details
+                    </button>
+                    <button class="act-btn act-btn--checkin" (click)="checkInPatient(p)">
+                      <i class="pi pi-calendar-plus"></i> Check-In
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Pagination -->
+      <div class="pagination-bar">
+        <span class="showing-text">
+          Showing {{ showingFrom }} to {{ showingTo }} of {{ filteredPatients.length }} results
+        </span>
+        <div class="pag-controls">
+          <button class="pag-btn" [disabled]="currentPage === 1" (click)="setPage(currentPage - 1)">
+            <i class="pi pi-chevron-left"></i>
+          </button>
+          @for (pg of pages; track pg) {
+            <button class="pag-btn pag-num" [class.pag-active]="pg === currentPage" (click)="setPage(pg)">
+              {{ pg }}
+            </button>
+          }
+          <button class="pag-btn" [disabled]="currentPage === totalPages" (click)="setPage(currentPage + 1)">
+            <i class="pi pi-chevron-right"></i>
+          </button>
+          <p-select [options]="pageSizeOpts" [(ngModel)]="pageSize"
+                    (onChange)="onPageSizeChange()" styleClass="pag-size-select" />
+        </div>
+      </div>
+    } @else {
+      <div class="no-results">
+        <i class="pi pi-search-minus"></i>
+        <p>No patients found</p>
+        <span>Try a different search term</span>
+      </div>
+    }
+  </div>
+
+  <!-- Patient Details Dialog -->
+  <p-dialog [(visible)]="showDetails" [modal]="true" [closable]="false" [draggable]="false"
+            appendTo="body"
+            [style]="{ width: '680px', maxWidth: '96vw' }"
+            styleClass="pd-dialog">
+
+    <!-- Loading -->
+    @if (isLoadingDetails) {
+      <div class="pd-loading">
+        <i class="pi pi-spin pi-spinner"></i>
+        <span>Loading patient details…</span>
+      </div>
+    }
+
+    <!-- Content -->
+    @if (selectedPatient && !isLoadingDetails) {
+      <div class="pd-body">
+
+        <!-- Identity -->
+        <div class="pd-identity">
+          <div class="pd-avatar">{{ detailInitials }}</div>
+          <div class="pd-id-info">
+            <div class="pd-name-row">
+              <span class="pd-name">{{ selectedPatient.name }}</span>
+              <span class="pd-pid">{{ selectedPatient.patientId }}</span>
+            </div>
+            <div class="pd-meta-row">
+              <span class="pd-status" [ngClass]="detailStatusClass(selectedPatient.status)">
+                {{ selectedPatient.status }}
+              </span>
+              @if (selectedPatient.doctor) {
+                <span class="pd-doctor"><i class="pi pi-user-md"></i> {{ selectedPatient.doctor }}</span>
+              }
+            </div>
+          </div>
+        </div>
+
+        <div class="pd-divider"></div>
+
+        <!-- Personal Information -->
+        <p class="pd-section-title"><i class="pi pi-user"></i> Personal Information</p>
+        <div class="pd-grid">
+          <div class="pd-item">
+            <span class="pd-lbl">Date of Birth</span>
+            <span class="pd-val">{{ formatDob(selectedPatient.dob) }}</span>
+          </div>
+          <div class="pd-item">
+            <span class="pd-lbl">Age / Gender</span>
+            <span class="pd-val">{{ selectedPatient.age }} yrs / {{ selectedPatient.gender }}</span>
+          </div>
+          <div class="pd-item">
+            <span class="pd-lbl">Mobile</span>
+            <span class="pd-val">{{ selectedPatient.mobileNumber || '—' }}</span>
+          </div>
+          @if (selectedPatient.insuranceCompany) {
+            <div class="pd-item">
+              <span class="pd-lbl">Insurance</span>
+              <span class="pd-val">{{ selectedPatient.insuranceCompany }}</span>
+            </div>
+          }
+          @if (selectedPatient.addressLine1 || selectedPatient.city) {
+            <div class="pd-item pd-item--full">
+              <span class="pd-lbl">Address</span>
+              <span class="pd-val">{{ formatAddress(selectedPatient) }}</span>
+            </div>
+          }
+        </div>
+
+        <!-- ID Proof -->
+        @if (selectedPatient.idProofType && selectedPatient.idProofNumber) {
+          <div class="pd-divider"></div>
+          <p class="pd-section-title"><i class="pi pi-id-card"></i> ID Proof</p>
+          <div class="pd-grid">
+            <div class="pd-item">
+              <span class="pd-lbl">Type</span>
+              <span class="pd-val">{{ selectedPatient.idProofType }}</span>
+            </div>
+            <div class="pd-item">
+              <span class="pd-lbl">Number</span>
+              <span class="pd-val pd-id-num">{{ selectedPatient.idProofNumber }}</span>
+            </div>
+          </div>
+        }
+
+        <!-- Medical Information -->
+        @if (detailAllergyList.length || consultData?.diagnosis || consultData?.symptoms?.length) {
+          <div class="pd-divider"></div>
+          <p class="pd-section-title"><i class="pi pi-heart"></i> Medical Information</p>
+          @if (detailAllergyList.length) {
+            <div class="pd-chips-row">
+              <span class="pd-lbl">Allergies</span>
+              <div class="pd-chips">
+                @for (a of detailAllergyList; track a) {
+                  <span class="pd-chip pd-chip--red">{{ a }}</span>
+                }
+              </div>
+            </div>
+          }
+          @if (consultData?.symptoms?.length) {
+            <div class="pd-chips-row" style="margin-top:8px">
+              <span class="pd-lbl">Chief Complaints</span>
+              <div class="pd-chips">
+                @for (s of consultData!.symptoms!; track s) {
+                  <span class="pd-chip pd-chip--teal">{{ s }}</span>
+                }
+              </div>
+            </div>
+          }
+          @if (consultData?.diagnosis) {
+            <div class="pd-history" style="margin-top:8px">
+              <span class="pd-lbl">Diagnosis</span>
+              <p class="pd-history-text pd-history-text--bold">{{ consultData!.diagnosis }}</p>
+            </div>
+          }
+          @if (consultVitals.length) {
+            <div style="margin-top:10px">
+              <span class="pd-lbl">Vitals</span>
+              <div class="pd-vitals-row">
+                @for (v of consultVitals; track v.label) {
+                  <div class="pd-vital-pill">
+                    <span>{{ v.label }}</span>
+                    <strong>{{ v.value }}</strong>
+                  </div>
+                }
+              </div>
+            </div>
+          }
+          @if (consultData?.notes) {
+            <div class="pd-history" style="margin-top:8px">
+              <span class="pd-lbl">Clinical Notes</span>
+              <p class="pd-history-text">{{ consultData!.notes }}</p>
+            </div>
+          }
+        }
+
+        <!-- Visit Info -->
+        @if (selectedPatient.checkinTime || selectedPatient.reasonForVisit || selectedPatient.queueToken) {
+          <div class="pd-divider"></div>
+          <p class="pd-section-title"><i class="pi pi-calendar"></i> Visit Information</p>
+          <div class="pd-grid">
+            @if (selectedPatient.queueToken) {
+              <div class="pd-item">
+                <span class="pd-lbl">Queue Token</span>
+                <span class="pd-val pd-token">{{ selectedPatient.queueToken }}</span>
+              </div>
+            }
+            @if (selectedPatient.checkinTime) {
+              <div class="pd-item">
+                <span class="pd-lbl">Check-In Time</span>
+                <span class="pd-val">{{ selectedPatient.checkinTime }}</span>
+              </div>
+            }
+            @if (selectedPatient.reasonForVisit) {
+              <div class="pd-item pd-item--full">
+                <span class="pd-lbl">Reason for Visit</span>
+                <span class="pd-val">{{ selectedPatient.reasonForVisit }}</span>
+              </div>
+            }
+          </div>
+        }
+
+        <!-- Prescription -->
+        @if (latestPrescription) {
+          <div class="pd-divider"></div>
+          <p class="pd-section-title"><i class="pi pi-file-edit"></i> Latest Prescription
+            <span class="pd-rx-date">{{ formatDate('' + latestPrescription.prescriptionDate) }}</span>
+            @if (latestPrescription.doctorName) {
+              <span class="pd-rx-doctor">· {{ latestPrescription.doctorName }}</span>
+            }
+          </p>
+          <div class="pd-rx-table-wrap">
+            <table class="pd-rx-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Medicine</th>
+                  <th>Dosage</th>
+                  <th>Frequency</th>
+                  <th>Duration</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (med of latestPrescription.medications; track med.name; let i = $index) {
+                  <tr>
+                    <td class="pd-rx-num">{{ i + 1 }}</td>
+                    <td class="pd-rx-name">{{ med.name }}</td>
+                    <td>{{ med.dosage || '—' }}</td>
+                    <td>{{ med.frequency }}</td>
+                    <td>{{ med.duration || '—' }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+          @if (latestPrescription.notes) {
+            <p class="pd-rx-notes"><strong>Notes:</strong> {{ latestPrescription.notes }}</p>
+          }
+        }
+
+        <!-- Clinical Images -->
+        @if (consultData?.images?.length) {
+          <div class="pd-divider"></div>
+          <p class="pd-section-title"><i class="pi pi-images"></i> Clinical Images</p>
+          <div class="pd-img-grid">
+            @for (img of consultData!.images!; track img.name) {
+              <div class="pd-img-thumb" (click)="zoomedImage = img.url" title="Click to zoom">
+                <img [src]="img.url" [alt]="img.name"/>
+                @if (img.annotated) { <span class="pd-img-annotated"><i class="pi pi-pencil"></i></span> }
+              </div>
+            }
+          </div>
+        }
+
+        <!-- Footer -->
+        <div class="pd-footer">
+          <button class="pd-btn pd-btn--close" (click)="showDetails = false">Close</button>
+          <button class="pd-btn pd-btn--checkin" (click)="checkInFromDetails()">
+            <i class="pi pi-calendar-plus"></i> Check-In Patient
+          </button>
+        </div>
+
+      </div>
+    }
+
+  </p-dialog>
+
+  <!-- Image Lightbox -->
+  @if (zoomedImage) {
+    <div class="pd-lightbox" (click)="zoomedImage = null">
+      <div class="pd-lightbox-inner" (click)="$event.stopPropagation()">
+        <button class="pd-lightbox-close" (click)="zoomedImage = null"><i class="pi pi-times"></i></button>
+        <img [src]="zoomedImage" alt="Clinical image"/>
+      </div>
+    </div>
+  }
+
+  <!-- Bottom Info Cards -->
+  <div class="info-cards">
+    <div class="info-card">
+      <i class="pi pi-info-circle info-icon"></i>
+      <div class="info-content">
+        <p class="info-title">No Results Found?</p>
+        <p class="info-text">Try searching with another Patient ID, Name or Mobile Number.</p>
+      </div>
+    </div>
+    <div class="info-card">
+      <i class="pi pi-info-circle info-icon"></i>
+      <div class="info-content">
+        <p class="info-title">Can't find the patient?</p>
+        <p class="info-text">If the patient is new, please register them.</p>
+      </div>
+      <button class="btn-register-new" routerLink="/patient-registration">Register New Patient</button>
+    </div>
+  </div>
+
+</div>

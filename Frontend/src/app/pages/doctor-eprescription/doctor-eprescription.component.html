@@ -1,0 +1,411 @@
+<div class="ep-shell">
+
+  <!-- Left: Patient List -->
+  <aside class="ep-sidebar no-print">
+    <div class="ep-sidebar-header">
+      <h2 class="ep-sidebar-title">Consulted Patients</h2>
+      <button class="ep-refresh" (click)="loadPatients()" title="Refresh"><i class="pi pi-refresh"></i></button>
+    </div>
+
+    @if (isLoadingPatients) {
+      <div class="ep-loading"><i class="pi pi-spin pi-spinner"></i><span>Loading…</span></div>
+    } @else if (patients.length === 0) {
+      <div class="ep-empty">
+        <i class="pi pi-inbox"></i>
+        <p>No consulted patients</p>
+        <span>Patients appear here after consultation</span>
+      </div>
+    } @else {
+      <div class="ep-pt-list">
+        @for (p of patients; track p.id) {
+          <button class="ep-pt-card" [class.ep-pt-card--active]="selectedPatient?.id === p.id" (click)="selectPatient(p)">
+            <div class="ep-pt-av">{{ initials(p.name) }}</div>
+            <div class="ep-pt-info">
+              <p class="ep-pt-name">{{ p.name }}</p>
+              <p class="ep-pt-id">{{ p.patientId }} · {{ p.age }}Y / {{ p.gender }}</p>
+            </div>
+            <i class="pi pi-chevron-right ep-pt-arrow"></i>
+          </button>
+        }
+      </div>
+    }
+  </aside>
+
+  <!-- Right: Content -->
+  <main class="ep-main">
+
+    @if (!selectedPatient) {
+      <div class="ep-placeholder no-print">
+        <i class="pi pi-file-edit"></i>
+        <h3>Select a patient</h3>
+        <p>Choose a consulted patient from the list to write an e-prescription</p>
+      </div>
+
+    } @else if (!showPreview) {
+
+      <!-- ── EDIT VIEW ── -->
+      <div class="ep-prescription">
+
+        <!-- Rx Header -->
+        <div class="rx-header">
+          <div class="rx-clinic">
+            <div class="rx-clinic-icon"><i class="pi pi-heart-fill"></i></div>
+            <div>
+              <h2 class="rx-clinic-name">MedClinic</h2>
+              <p class="rx-clinic-sub">Electronic Prescription</p>
+            </div>
+          </div>
+          <div class="rx-doc">
+            <p class="rx-doc-name">{{ auth.getUser()?.name }}</p>
+            <p class="rx-doc-spec">{{ auth.getUser()?.specialization || 'General Medicine' }}</p>
+            <p class="rx-doc-date">Date: {{ today }}</p>
+          </div>
+        </div>
+
+        <!-- Patient Info -->
+        <div class="rx-patient-bar">
+          <div><span class="rx-label">Patient</span><span class="rx-val">{{ selectedPatient.name }}</span></div>
+          <div><span class="rx-label">ID</span><span class="rx-val">{{ selectedPatient.patientId }}</span></div>
+          <div><span class="rx-label">Age / Sex</span><span class="rx-val">{{ selectedPatient.age }} Yrs / {{ selectedPatient.gender }}</span></div>
+          @if (selectedPatient.mobileNumber) {
+            <div><span class="rx-label">Mobile</span><span class="rx-val">{{ selectedPatient.mobileNumber }}</span></div>
+          }
+        </div>
+
+        <!-- Allergy Alert (from jr. doctor) -->
+        @if (allergyList.length) {
+          <div class="rx-allergy-bar">
+            <i class="pi pi-exclamation-triangle"></i>
+            <strong>ALLERGIES:</strong>
+            @for (a of allergyList; track a) {
+              <span class="rx-allergy-tag">{{ a }}</span>
+            }
+          </div>
+        }
+
+        <!-- Consultation Summary -->
+        @if (consultation.symptoms?.length || consultation.diagnosis || vitalsEntries.length || consultation.jrNotes) {
+          <div class="rx-section">
+            <h4 class="rx-section-title">Consultation Summary</h4>
+            <div class="rx-consult-layout">
+              <div class="rx-consult-left">
+                @if (consultation.jrNotes) {
+                  <div class="rx-consult-item">
+                    <span class="rx-label">Past Medication / History</span>
+                    <p class="rx-past-med">{{ consultation.jrNotes }}</p>
+                  </div>
+                }
+                @if (consultation.symptoms?.length) {
+                  <div class="rx-consult-item">
+                    <span class="rx-label">Chief Complaints</span>
+                    <div class="rx-chips">
+                      @for (s of consultation.symptoms!; track s) {
+                        <span class="rx-chip">{{ s }}</span>
+                      }
+                    </div>
+                  </div>
+                }
+                @if (consultation.diagnosis) {
+                  <div class="rx-consult-item">
+                    <span class="rx-label">Diagnosis</span>
+                    <span class="rx-val rx-val--bold">{{ consultation.diagnosis }}</span>
+                  </div>
+                }
+              </div>
+              @if (vitalsEntries.length) {
+                <div class="rx-consult-right">
+                  <span class="rx-label">Vitals</span>
+                  <div class="rx-vitals-grid">
+                    @for (v of vitalsEntries; track v.label) {
+                      <div class="rx-vital-pill"><span>{{ v.label }}</span><strong>{{ v.value }}</strong></div>
+                    }
+                  </div>
+                </div>
+              }
+            </div>
+          </div>
+        }
+
+        <!-- Medicines -->
+        <div class="rx-section">
+          <div class="rx-section-head">
+            <h4 class="rx-section-title">&#8478; Medicines</h4>
+            <button class="btn-add-row" (click)="addRow()"><i class="pi pi-plus"></i> Add Medicine</button>
+          </div>
+          <table class="rx-table">
+            <thead>
+              <tr>
+                <th class="col-num">#</th>
+                <th class="col-med">Medicine</th>
+                <th class="col-dos">Dosage</th>
+                <th class="col-freq">Frequency</th>
+                <th class="col-dur">Duration</th>
+                <th class="col-del"></th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (row of rows; track trackIdx($index); let i = $index) {
+                <tr>
+                  <td class="rx-num">{{ i + 1 }}</td>
+                  <td class="rx-med-cell">
+                    <div class="med-autocomplete">
+                      <input class="rx-input" type="text" placeholder="Type medicine name…"
+                        [(ngModel)]="row.name" (input)="onMedInput(row)"
+                        (blur)="hideSuggestions(row)" (focus)="onMedInput(row)"
+                        autocomplete="off"/>
+                      @if (row.showSug && row.suggestions.length) {
+                        <div class="med-sug-box">
+                          @for (s of row.suggestions; track s) {
+                            <div class="med-sug-item" (mousedown)="pickSuggestion(row, s)">
+                              <i class="pi pi-pills"></i> {{ s }}
+                            </div>
+                          }
+                        </div>
+                      }
+                    </div>
+                  </td>
+                  <td>
+                    <select class="rx-select" [(ngModel)]="row.dosage">
+                      @for (d of getDosageOptions(row); track d) { <option [value]="d">{{ d }}</option> }
+                    </select>
+                  </td>
+                  <td>
+                    <select class="rx-select" [(ngModel)]="row.frequency">
+                      @for (f of FREQUENCIES; track f) { <option [value]="f">{{ f }}</option> }
+                    </select>
+                  </td>
+                  <td><input class="rx-input rx-input--sm" type="text" placeholder="e.g. 5 days" [(ngModel)]="row.duration"/></td>
+                  <td class="col-del">
+                    <button class="btn-rm-row" (click)="removeRow(i)" [disabled]="rows.length === 1"><i class="pi pi-trash"></i></button>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Notes -->
+        <div class="rx-section">
+          <h4 class="rx-section-title">Additional Notes / Instructions</h4>
+          <textarea class="rx-textarea" rows="3" placeholder="e.g. Take with food, avoid alcohol, follow-up in 7 days…" [(ngModel)]="rxNotes"></textarea>
+        </div>
+
+        <!-- Clinical Images (reference) -->
+        @if (clinicalImages.length) {
+          <div class="rx-section">
+            <h4 class="rx-section-title">Clinical Images <span class="rx-img-count">{{ clinicalImages.length }}</span></h4>
+            <div class="rx-img-grid">
+              @for (img of clinicalImages; track img.name) {
+                <div class="rx-img-thumb" (click)="zoomedImage = img.url" title="Click to zoom">
+                  <img [src]="img.url" [alt]="img.name"/>
+                  @if (img.annotated) {
+                    <span class="rx-img-annotated"><i class="pi pi-pencil"></i></span>
+                  }
+                </div>
+              }
+            </div>
+          </div>
+        }
+
+      </div>
+
+      <!-- Edit Action Bar -->
+      <div class="ep-action-bar">
+        @if (!filledRows.length) {
+          <span class="ep-hint"><i class="pi pi-info-circle"></i> Add at least one medicine to proceed</span>
+        }
+        <button class="btn-proceed" (click)="proceedToPreview()" [disabled]="!filledRows.length">
+          Proceed <i class="pi pi-arrow-right"></i>
+        </button>
+      </div>
+
+    } @else {
+
+      <!-- ── PREVIEW VIEW ── -->
+      <div class="ep-preview-wrap">
+
+        <!-- Printable Area -->
+        <div class="rx-preview-card" id="rx-print-area">
+
+          <!-- Header -->
+          <div class="rx-header">
+            <div class="rx-clinic">
+              <div class="rx-clinic-icon"><i class="pi pi-heart-fill"></i></div>
+              <div>
+                <h2 class="rx-clinic-name">MedClinic</h2>
+                <p class="rx-clinic-sub">Electronic Prescription</p>
+              </div>
+            </div>
+            <div class="rx-doc">
+              <p class="rx-doc-name">{{ auth.getUser()?.name }}</p>
+              <p class="rx-doc-spec">{{ auth.getUser()?.specialization || 'General Medicine' }}</p>
+              <p class="rx-doc-date">Date: {{ today }}</p>
+            </div>
+          </div>
+
+          <!-- Patient Bar -->
+          <div class="rx-patient-bar">
+            <div><span class="rx-label">Patient</span><span class="rx-val">{{ selectedPatient!.name }}</span></div>
+            <div><span class="rx-label">ID</span><span class="rx-val">{{ selectedPatient!.patientId }}</span></div>
+            <div><span class="rx-label">Age / Sex</span><span class="rx-val">{{ selectedPatient!.age }} Yrs / {{ selectedPatient!.gender }}</span></div>
+            @if (selectedPatient!.mobileNumber) {
+              <div><span class="rx-label">Mobile</span><span class="rx-val">{{ selectedPatient!.mobileNumber }}</span></div>
+            }
+          </div>
+
+          <!-- Allergy Alert (from jr. doctor) -->
+          @if (allergyList.length) {
+            <div class="rx-allergy-bar">
+              <i class="pi pi-exclamation-triangle"></i>
+              <strong>ALLERGIES:</strong>
+              @for (a of allergyList; track a) {
+                <span class="rx-allergy-tag">{{ a }}</span>
+              }
+            </div>
+          }
+
+          <!-- Consultation Summary -->
+          @if (consultation.symptoms?.length || consultation.diagnosis || vitalsEntries.length || consultation.jrNotes) {
+            <div class="rx-section">
+              <h4 class="rx-section-title">Consultation Summary</h4>
+              <div class="rx-consult-layout">
+                <div class="rx-consult-left">
+                  @if (consultation.jrNotes) {
+                    <div class="rx-consult-item">
+                      <span class="rx-label">Past Medication / History</span>
+                      <p class="rx-past-med">{{ consultation.jrNotes }}</p>
+                    </div>
+                  }
+                  @if (consultation.symptoms?.length) {
+                    <div class="rx-consult-item">
+                      <span class="rx-label">Chief Complaints</span>
+                      <div class="rx-chips">
+                        @for (s of consultation.symptoms!; track s) {
+                          <span class="rx-chip">{{ s }}</span>
+                        }
+                      </div>
+                    </div>
+                  }
+                  @if (consultation.diagnosis) {
+                    <div class="rx-consult-item">
+                      <span class="rx-label">Diagnosis</span>
+                      <span class="rx-val rx-val--bold">{{ consultation.diagnosis }}</span>
+                    </div>
+                  }
+                </div>
+                @if (vitalsEntries.length) {
+                  <div class="rx-consult-right">
+                    <span class="rx-label">Vitals</span>
+                    <div class="rx-vitals-grid">
+                      @for (v of vitalsEntries; track v.label) {
+                        <div class="rx-vital-pill"><span>{{ v.label }}</span><strong>{{ v.value }}</strong></div>
+                      }
+                    </div>
+                  </div>
+                }
+              </div>
+            </div>
+          }
+
+          <!-- Medicines (read-only) -->
+          <div class="rx-section">
+            <h4 class="rx-section-title">&#8478; Medicines</h4>
+            <table class="rx-preview-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Medicine</th>
+                  <th>Dosage</th>
+                  <th>Frequency</th>
+                  <th>Duration</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (row of filledRows; track row.name; let i = $index) {
+                  <tr>
+                    <td class="rx-num">{{ i + 1 }}</td>
+                    <td class="pv-med-name">{{ row.name }}</td>
+                    <td>{{ row.dosage || '—' }}</td>
+                    <td>{{ row.frequency }}</td>
+                    <td>{{ row.duration || '—' }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Notes -->
+          @if (rxNotes) {
+            <div class="rx-section">
+              <h4 class="rx-section-title">Notes / Instructions</h4>
+              <p class="rx-notes-text">{{ rxNotes }}</p>
+            </div>
+          }
+
+          <!-- Clinical Images -->
+          @if (clinicalImages.length) {
+            <div class="rx-section">
+              <h4 class="rx-section-title">Clinical Images <span class="rx-img-count">{{ clinicalImages.length }}</span></h4>
+              <div class="rx-img-grid">
+                @for (img of clinicalImages; track img.name) {
+                  <div class="rx-img-thumb" (click)="zoomedImage = img.url" title="Click to zoom">
+                    <img [src]="img.url" [alt]="img.name"/>
+                    @if (img.annotated) {
+                      <span class="rx-img-annotated"><i class="pi pi-pencil"></i></span>
+                    }
+                  </div>
+                }
+              </div>
+            </div>
+          }
+
+          <!-- E-Signature -->
+          <div class="rx-sig-section">
+            <div class="rx-sig-left">
+              <div class="rx-esig-box">
+                <span class="rx-esig-label">E-Signature</span>
+                <p class="rx-esig-name">{{ auth.getUser()?.name }}</p>
+              </div>
+              <div class="rx-sig-underline"></div>
+              <p class="rx-sig-doctor-name">{{ auth.getUser()?.name }}</p>
+              <p class="rx-sig-spec">{{ auth.getUser()?.specialization || 'General Medicine' }}</p>
+            </div>
+          </div>
+
+        </div><!-- /rx-print-area -->
+
+        <!-- Preview Action Bar -->
+        <div class="ep-preview-actions no-print">
+          <button class="btn-back" (click)="backToEdit()">
+            <i class="pi pi-arrow-left"></i> Back
+          </button>
+          <div class="pv-right">
+            @if (savedSuccess) {
+              <span class="ep-saved"><i class="pi pi-check-circle"></i> Saved successfully!</span>
+            }
+            <button class="btn-print-pv" (click)="printPrescription()">
+              <i class="pi pi-print"></i> Print
+            </button>
+            <button class="btn-save-pv" (click)="savePrescription()" [disabled]="isSaving || savedSuccess">
+              @if (isSaving) { <i class="pi pi-spin pi-spinner"></i> Saving… }
+              @else if (savedSuccess) { <i class="pi pi-check"></i> Saved }
+              @else { <i class="pi pi-save"></i> Save Prescription }
+            </button>
+          </div>
+        </div>
+
+      </div><!-- /ep-preview-wrap -->
+
+    }
+  </main>
+</div>
+
+<!-- Image Lightbox -->
+@if (zoomedImage) {
+  <div class="rx-lightbox" (click)="zoomedImage = null">
+    <div class="rx-lightbox-inner" (click)="$event.stopPropagation()">
+      <button class="rx-lightbox-close" (click)="zoomedImage = null"><i class="pi pi-times"></i></button>
+      <img [src]="zoomedImage" alt="Clinical image"/>
+    </div>
+  </div>
+}

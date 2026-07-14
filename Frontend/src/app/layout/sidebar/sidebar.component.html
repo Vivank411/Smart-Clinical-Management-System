@@ -1,0 +1,36 @@
+<aside class="sidebar" [class.sidebar--open]="mobileOpen">
+
+  <div class="sidebar-brand">
+    <div class="brand-mark"><i class="pi pi-heart-fill"></i></div>
+    <div class="brand-text">
+      <span class="brand-name">MediClinic</span>
+      <span class="brand-sub">{{ portalLabel }}</span>
+    </div>
+  </div>
+
+  <div class="nav-section">
+    <span class="nav-label">Main Menu</span>
+    <nav>
+      @for (item of navItems; track item.route) {
+        <a [routerLink]="item.route" routerLinkActive="active" class="nav-item" (click)="onNavClick()">
+          <span class="nav-icon"><i class="pi {{ item.icon }}"></i></span>
+          <span class="nav-text">{{ item.label }}</span>
+        </a>
+      }
+    </nav>
+  </div>
+
+  <div class="sidebar-footer">
+    <div class="user-block">
+      <div class="user-av">{{ auth.getUser()?.initials }}</div>
+      <div class="user-meta">
+        <span class="user-name">{{ auth.getUser()?.name }}</span>
+        <span class="user-role">{{ auth.getUser()?.role }}</span>
+      </div>
+    </div>
+    <button class="logout-btn" (click)="auth.logout()" title="Sign out">
+      <i class="pi pi-sign-out"></i>
+    </button>
+  </div>
+
+</aside>

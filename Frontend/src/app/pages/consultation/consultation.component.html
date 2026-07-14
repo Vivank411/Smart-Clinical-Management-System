@@ -1,0 +1,373 @@
+@if (isLoading) {
+  <div class="cs-loading">
+    <i class="pi pi-spin pi-spinner"></i>
+    <span>Loading patient…</span>
+  </div>
+} @else if (patient) {
+
+<div class="cs-page">
+
+  <!-- Patient Header -->
+  <div class="cs-header">
+    <button class="cs-back" (click)="back()">
+      <i class="pi pi-arrow-left"></i>
+    </button>
+    <div class="cs-header-info">
+      <div class="cs-av">{{ patient.name.charAt(0).toUpperCase() }}</div>
+      <div>
+        <h1 class="cs-patient-name">{{ patient.name }}</h1>
+        <div class="cs-patient-meta">
+          <span>{{ patient.patientId }}</span>
+          <span class="meta-sep">·</span>
+          <span>{{ patient.age }} yrs / {{ patient.gender }}</span>
+          <span class="meta-sep">·</span>
+          <span>Token: <strong>{{ patient.queueToken || '—' }}</strong></span>
+          @if (patient.reasonForVisit) {
+            <span class="meta-sep">·</span>
+            <span>{{ patient.reasonForVisit }}</span>
+          }
+        </div>
+      </div>
+    </div>
+    <div class="cs-header-right">
+      <span class="cs-status-badge">Checked-In</span>
+    </div>
+  </div>
+
+  <!-- Allergy Alert -->
+  @if (allergyList.length) {
+    <div class="cs-allergy-bar">
+      <i class="pi pi-exclamation-triangle"></i>
+      <strong>Allergy Alert:</strong>
+      @for (a of allergyList; track a) {
+        <span class="allergy-tag">{{ a }}</span>
+      }
+    </div>
+  }
+
+  <!-- Patient History Panel (jr. doctor's notes) -->
+  @if (allergyList.length || jrNotes) {
+    <div class="cs-history-panel">
+      <div class="cs-history-heading">
+        <i class="pi pi-history"></i> Patient History
+        <span class="cs-history-sub">Recorded by Junior Doctor</span>
+      </div>
+      <div class="cs-history-body">
+        @if (allergyList.length) {
+          <div class="cs-history-row">
+            <span class="cs-hist-key"><i class="pi pi-exclamation-circle"></i> Known Allergies</span>
+            <div class="cs-hist-chips">
+              @for (a of allergyList; track a) {
+                <span class="cs-hist-chip cs-hist-chip--allergy">{{ a }}</span>
+              }
+            </div>
+          </div>
+        }
+        @if (jrNotes) {
+          <div class="cs-history-row">
+            <span class="cs-hist-key"><i class="pi pi-book"></i> Past Medication / History</span>
+            <p class="cs-hist-text">{{ jrNotes }}</p>
+          </div>
+        }
+      </div>
+    </div>
+  }
+
+  <!-- Tab Bar -->
+  <div class="cs-tabs">
+    <button class="cs-tab" [class.cs-tab--active]="activeTab === 'clinical'" (click)="activeTab = 'clinical'">
+      <i class="pi pi-heart-fill"></i> Clinical Details
+    </button>
+    <button class="cs-tab" [class.cs-tab--active]="activeTab === 'images'" (click)="activeTab = 'images'">
+      <i class="pi pi-image"></i> Clinical Images
+      @if (uploadedImages.length) {
+        <span class="cs-tab-badge">{{ uploadedImages.length }}</span>
+      }
+    </button>
+  </div>
+
+  <!-- Tab Content -->
+  <div class="cs-body">
+
+    <!-- Clinical Details -->
+    @if (activeTab === 'clinical') {
+      <div class="cs-section">
+        <h3 class="cs-section-title">Presenting Symptoms <span class="cs-required">*</span></h3>
+        <div class="symptom-box" [class.invalid]="symptomsInvalid">
+          @for (s of symptoms; track s; let i = $index) {
+            <span class="symptom-chip">
+              {{ s }}
+              <button class="sym-remove" (click)="removeSymptom(i)"><i class="pi pi-times"></i></button>
+            </span>
+          }
+          <input
+            class="symptom-input"
+            type="text"
+            placeholder="{{ symptoms.length ? 'Add more…' : 'Type symptom, press Enter or comma…' }}"
+            [(ngModel)]="symptomInput"
+            (keydown)="onSymptomKey($event)"
+            (blur)="addSymptom()"
+          />
+        </div>
+        @if (symptomsInvalid) {
+          <p class="cs-field-error"><i class="pi pi-exclamation-circle"></i> At least one symptom is required.</p>
+        }
+      </div>
+
+      <!-- Vitals -->
+      <div class="cs-section">
+        <h3 class="cs-section-title">Vitals <span class="cs-required">*</span></h3>
+        <div class="vitals-grid" (input)="onFieldEdit()">
+          <div class="vital-field">
+            <label>Blood Pressure</label>
+            <div class="vital-input-wrap" [class.invalid]="isVitalMissing('bp')"><i class="pi pi-heart"></i><input type="text" placeholder="e.g. 120/80 mmHg" [(ngModel)]="vitals.bp"/></div>
+          </div>
+          <div class="vital-field">
+            <label>Pulse Rate</label>
+            <div class="vital-input-wrap" [class.invalid]="isVitalMissing('pulse')"><i class="pi pi-wave-pulse"></i><input type="text" placeholder="e.g. 72 bpm" [(ngModel)]="vitals.pulse"/></div>
+          </div>
+          <div class="vital-field">
+            <label>Temperature</label>
+            <div class="vital-input-wrap" [class.invalid]="isVitalMissing('temp')"><i class="pi pi-sun"></i><input type="text" placeholder="e.g. 98.6 °F" [(ngModel)]="vitals.temp"/></div>
+          </div>
+          <div class="vital-field">
+            <label>SpO₂</label>
+            <div class="vital-input-wrap" [class.invalid]="isVitalMissing('spo2')"><i class="pi pi-chart-bar"></i><input type="text" placeholder="e.g. 98%" [(ngModel)]="vitals.spo2"/></div>
+          </div>
+          <div class="vital-field">
+            <label>Weight</label>
+            <div class="vital-input-wrap" [class.invalid]="isVitalMissing('weight')"><i class="pi pi-user"></i><input type="text" placeholder="e.g. 65 kg" [(ngModel)]="vitals.weight"/></div>
+          </div>
+          <div class="vital-field">
+            <label>Height</label>
+            <div class="vital-input-wrap" [class.invalid]="isVitalMissing('height')"><i class="pi pi-arrows-v"></i><input type="text" placeholder="e.g. 170 cm" [(ngModel)]="vitals.height"/></div>
+          </div>
+        </div>
+        @if (vitalsInvalid) {
+          <p class="cs-field-error"><i class="pi pi-exclamation-circle"></i> All vital fields are required.</p>
+        }
+      </div>
+
+      <!-- Diagnosis -->
+      <div class="cs-section">
+        <h3 class="cs-section-title">Diagnosis</h3>
+        <input class="cs-text-input" type="text" placeholder="Enter primary diagnosis…" [(ngModel)]="diagnosis"/>
+      </div>
+
+      <!-- Notes -->
+      <div class="cs-section">
+        <h3 class="cs-section-title">Clinical Notes</h3>
+        <textarea class="cs-textarea" rows="4" placeholder="Additional clinical observations, treatment plan…" [(ngModel)]="notes"></textarea>
+      </div>
+
+      <!-- Feedback -->
+      @if (formError) {
+        <div class="cs-alert cs-alert--error"><i class="pi pi-exclamation-triangle"></i> {{ formError }}</div>
+      }
+      @if (draftError) {
+        <div class="cs-alert cs-alert--error"><i class="pi pi-exclamation-circle"></i> {{ draftError }}</div>
+      }
+      @if (savedDraft) {
+        <div class="cs-alert cs-alert--ok"><i class="pi pi-check-circle"></i> Draft saved successfully.</div>
+      }
+
+      <!-- Actions -->
+      <div class="cs-actions">
+        <button class="btn-draft" (click)="saveDraft()" [disabled]="isSaving">
+          @if (savedDraft) {
+            <i class="pi pi-check"></i> Saved!
+          } @else {
+            <i class="pi pi-save"></i> {{ isSaving ? 'Saving…' : 'Save Draft' }}
+          }
+        </button>
+        <button class="btn-next" (click)="goToImages()">
+          Next: Clinical Images <i class="pi pi-arrow-right"></i>
+        </button>
+      </div>
+    }
+
+    <!-- Clinical Images -->
+    @if (activeTab === 'images') {
+      <div class="cs-section">
+        <h3 class="cs-section-title">Upload Clinical Images <span class="cs-optional">(optional)</span></h3>
+        <label class="upload-area">
+          <i class="pi pi-cloud-upload"></i>
+          <p>Click to upload or drag & drop</p>
+          <span>PNG, JPG up to 20MB — click any image to annotate</span>
+          <input type="file" accept="image/*" multiple (change)="onFileSelect($event)" hidden/>
+        </label>
+
+        @if (uploadedImages.length) {
+          <div class="img-grid">
+            @for (img of uploadedImages; track img.name; let i = $index) {
+              <div class="img-card" (click)="openAnnotator(img, i)" title="Click to annotate">
+                <img [src]="img.url" [alt]="img.name"/>
+                @if (img.annotated) {
+                  <span class="img-annotated-badge"><i class="pi pi-pencil"></i> Annotated</span>
+                }
+                <div class="img-overlay">
+                  <p class="img-name">{{ img.name }}</p>
+                  <div class="img-overlay-actions">
+                    <button class="img-action-btn" title="Annotate" (click)="openAnnotator(img, i); $event.stopPropagation()">
+                      <i class="pi pi-pencil"></i>
+                    </button>
+                    <button class="img-remove" (click)="removeImage(i); $event.stopPropagation()" title="Remove">
+                      <i class="pi pi-trash"></i>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            }
+          </div>
+        }
+      </div>
+
+      <!-- Feedback -->
+      @if (formError) {
+        <div class="cs-alert cs-alert--error"><i class="pi pi-exclamation-triangle"></i> {{ formError }}</div>
+      }
+      @if (draftError) {
+        <div class="cs-alert cs-alert--error"><i class="pi pi-exclamation-circle"></i> {{ draftError }}</div>
+      }
+      @if (savedDraft) {
+        <div class="cs-alert cs-alert--ok"><i class="pi pi-check-circle"></i> Draft saved successfully.</div>
+      }
+
+      <!-- Complete Consultation -->
+      <div class="cs-actions">
+        <button class="btn-draft" (click)="saveDraft()" [disabled]="isSaving">
+          @if (savedDraft) {
+            <i class="pi pi-check"></i> Saved!
+          } @else {
+            <i class="pi pi-save"></i> {{ isSaving ? 'Saving…' : 'Save Draft' }}
+          }
+        </button>
+        <button class="btn-complete" (click)="completeConsultation()" [disabled]="isCompleting">
+          @if (isCompleting) {
+            <i class="pi pi-spin pi-spinner"></i> Completing…
+          } @else {
+            <i class="pi pi-check-circle"></i> Complete Consultation
+          }
+        </button>
+      </div>
+    }
+
+  </div>
+</div>
+
+}
+
+<!-- ── Annotation Modal ─────────────────────────────────── -->
+@if (annotating) {
+  <div class="annot-overlay" (click)="closeAnnotator()">
+    <div class="annot-modal" (click)="$event.stopPropagation()">
+
+      <!-- Toolbar -->
+      <div class="annot-toolbar">
+
+        <!-- Drawing tools -->
+        <div class="annot-tool-group">
+          <button class="annot-tool-btn" [class.active]="annotTool === 'pencil'" (click)="annotTool = 'pencil'" title="Draw">
+            <i class="pi pi-pencil"></i><span>Draw</span>
+          </button>
+          <button class="annot-tool-btn" [class.active]="annotTool === 'eraser'" (click)="annotTool = 'eraser'" title="Eraser">
+            <span class="annot-eraser-icon">◻</span><span>Erase</span>
+          </button>
+          <button class="annot-tool-btn" [class.active]="annotTool === 'text'" (click)="annotTool = 'text'" title="Add text">
+            <span class="annot-text-icon">T</span><span>Text</span>
+          </button>
+        </div>
+
+        <div class="annot-sep"></div>
+
+        <!-- Color palette -->
+        <div class="annot-colors">
+          @for (c of ANNOT_COLORS; track c) {
+            <button class="annot-color-dot"
+              [style.background]="c"
+              [class.active]="annotColor === c"
+              [style.outline-color]="annotColor === c ? '#0d9488' : 'transparent'"
+              (click)="annotColor = c"
+              [title]="c">
+            </button>
+          }
+        </div>
+
+        <div class="annot-sep"></div>
+
+        <!-- Size -->
+        <div class="annot-size-row">
+          <span class="annot-lbl">Size</span>
+          <input type="range" min="1" max="20" [(ngModel)]="annotSize" class="annot-slider"/>
+          <span class="annot-size-num">{{ annotSize }}</span>
+        </div>
+
+        <div class="annot-sep"></div>
+
+        <!-- Undo / Clear -->
+        <button class="annot-icon-btn" (click)="undoAnnot()" [disabled]="!undoStack.length" title="Undo">
+          <i class="pi pi-undo"></i>
+        </button>
+        <button class="annot-icon-btn" (click)="clearAnnot()" [disabled]="!undoStack.length" title="Clear all annotations">
+          <i class="pi pi-trash"></i>
+        </button>
+
+        <!-- Spacer -->
+        <div class="annot-grow"></div>
+
+        <!-- Image name -->
+        <span class="annot-fname">{{ annotating.img.name }}</span>
+
+        <!-- Save / Close -->
+        <button class="annot-save-btn" (click)="saveAnnotation()">
+          <i class="pi pi-check"></i> Save
+        </button>
+        <button class="annot-close-btn" (click)="closeAnnotator()" title="Discard">
+          <i class="pi pi-times"></i>
+        </button>
+
+      </div>
+
+      <!-- Canvas area -->
+      <div class="annot-canvas-wrap">
+        <div class="annot-canvas-container">
+          <canvas id="annot-bg"></canvas>
+          <canvas id="annot-draw"
+            [style.cursor]="annotTool === 'eraser' ? 'cell' : annotTool === 'text' ? 'text' : 'crosshair'"
+            (mousedown)="onAnnotMouseDown($event)"
+            (mousemove)="onAnnotMouseMove($event)"
+            (mouseup)="onAnnotMouseUp()"
+            (mouseleave)="onAnnotMouseUp()"
+            (touchstart)="onAnnotTouchStart($event)"
+            (touchmove)="onAnnotTouchMove($event)"
+            (touchend)="onAnnotTouchEnd($event)">
+          </canvas>
+
+          @if (textInputActive) {
+            <input id="annot-text-input" class="annot-text-input"
+              [style.left.px]="textX"
+              [style.top.px]="textY"
+              [style.color]="annotColor"
+              [style.font-size.px]="annotSize * 5"
+              [(ngModel)]="textValue"
+              (keydown.enter)="commitText()"
+              (blur)="commitText()"/>
+          }
+        </div>
+      </div>
+
+      <!-- Status bar -->
+      <div class="annot-statusbar">
+        <span>
+          @if (annotTool === 'pencil') { <i class="pi pi-pencil"></i> Draw mode — click and drag to annotate }
+          @else if (annotTool === 'eraser') { <span class="annot-eraser-icon">◻</span> Eraser mode — drag over annotations to erase }
+          @else { <span class="annot-text-icon">T</span> Text mode — click on the image to place text }
+        </span>
+        @if (undoStack.length) {
+          <span class="annot-undo-hint">{{ undoStack.length }} action{{ undoStack.length > 1 ? 's' : '' }} — Ctrl+Z or Undo button</span>
+        }
+      </div>
+
+    </div>
+  </div>
+}
