@@ -1,7 +1,7 @@
 <div class="layout-wrapper" [class.sidebar-open]="sidebarOpen">
 
   <!-- Mobile backdrop -->
-  <div class="sidebar-backdrop" (click)="sidebarOpen = false"></div>
+  <div class="sidebar-backdrop" (click)="closeSidebar()"></div>
 
   <!-- Mobile-only top bar -->
   <header class="mobile-topbar">
@@ -15,9 +15,9 @@
     <div class="mobile-user-av">{{ initials }}</div>
   </header>
 
-  <app-sidebar [mobileOpen]="sidebarOpen" (navClick)="sidebarOpen = false" />
+  <app-sidebar [mobileOpen]="sidebarOpen" (navClick)="closeSidebar()" />
 
-  <main class="layout-content" (click)="sidebarOpen = false">
+  <main class="layout-content" (click)="closeSidebar()">
     <router-outlet />
   </main>
 

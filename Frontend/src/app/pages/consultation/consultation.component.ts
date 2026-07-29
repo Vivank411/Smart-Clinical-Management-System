@@ -37,6 +37,10 @@ export class ConsultationComponent implements OnInit {
   notes = '';
 
   uploadedImages: ImageItem[] = [];
+  isDragOver  = false;
+  uploadError = '';
+  private readonly MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+  private readonly ACCEPTED_TYPES  = ['image/png', 'image/jpeg'];
   jrNotes = '';  // Jr. doctor's past medication / history notes (preserved across save)
 
   // ── Annotation state ─────────────────────────────────
@@ -140,14 +144,48 @@ export class ConsultationComponent implements OnInit {
   goToImages() { this.activeTab = 'images'; }
 
   onFileSelect(e: Event) {
-    const files = (e.target as HTMLInputElement).files;
-    if (!files) return;
+    const input = e.target as HTMLInputElement;
+    this.addFiles(input.files);
+    input.value = '';   // allow re-selecting the same file
+  }
+
+  onDragOver(e: DragEvent) { e.preventDefault(); this.isDragOver = true; }
+
+  onDragLeave(e: DragEvent) { e.preventDefault(); this.isDragOver = false; }
+
+  onDrop(e: DragEvent) {
+    e.preventDefault();
+    this.isDragOver = false;
+    this.addFiles(e.dataTransfer?.files ?? null);
+  }
+
+  private addFiles(files: FileList | null) {
+    if (!files?.length) return;
+    this.uploadError = '';
+    const rejected: string[] = [];
+
     for (const f of Array.from(files)) {
+      if (!this.ACCEPTED_TYPES.includes(f.type)) { rejected.push(`${f.name} (not a PNG/JPG)`); continue; }
+      if (f.size > this.MAX_IMAGE_BYTES)         { rejected.push(`${f.name} (over 20MB)`);     continue; }
+
       const reader = new FileReader();
-      reader.onload = ev => { this.uploadedImages.push({ name: f.name, url: ev.target!.result as string }); };
+      reader.onload  = ev => { this.uploadedImages.push({ name: this.uniqueName(f.name), url: ev.target!.result as string }); };
+      reader.onerror = ()  => { this.uploadError = `Could not read ${f.name}.`; };
       reader.readAsDataURL(f);
     }
-    (e.target as HTMLInputElement).value = '';
+
+    if (rejected.length) this.uploadError = `Skipped: ${rejected.join(', ')}.`;
+  }
+
+  /** The image grid tracks by name, so duplicates must be disambiguated. */
+  private uniqueName(name: string): string {
+    if (!this.uploadedImages.some(i => i.name === name)) return name;
+    const dot  = name.lastIndexOf('.');
+    const base = dot > 0 ? name.slice(0, dot) : name;
+    const ext  = dot > 0 ? name.slice(dot)    : '';
+    let n = 2;
+    while (this.uploadedImages.some(i => i.name === `${base} (${n})${ext}`)) n++;
+    return `${base} (${n})${ext}`;
   }
 
   removeImage(i: number) { this.uploadedImages.splice(i, 1); }
