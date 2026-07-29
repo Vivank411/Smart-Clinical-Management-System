@@ -190,12 +190,24 @@
     @if (activeTab === 'images') {
       <div class="cs-section">
         <h3 class="cs-section-title">Upload Clinical Images <span class="cs-optional">(optional)</span></h3>
-        <label class="upload-area">
+        <div class="upload-area" [class.upload-area--drag]="isDragOver"
+             (dragover)="onDragOver($event)"
+             (dragleave)="onDragLeave($event)"
+             (drop)="onDrop($event)">
           <i class="pi pi-cloud-upload"></i>
           <p>Click to upload or drag & drop</p>
           <span>PNG, JPG up to 20MB — click any image to annotate</span>
-          <input type="file" accept="image/*" multiple (change)="onFileSelect($event)" hidden/>
-        </label>
+          <!-- Real input stretched over the whole box: the click lands on the
+               input itself, so no label-forwarding or scripted .click() involved. -->
+          <input #fileInput type="file" accept="image/png,image/jpeg" multiple
+                 class="upload-input" title="Choose clinical images"
+                 aria-label="Upload clinical images"
+                 (change)="onFileSelect($event)"/>
+        </div>
+
+        @if (uploadError) {
+          <div class="cs-alert cs-alert--error"><i class="pi pi-exclamation-circle"></i> {{ uploadError }}</div>
+        }
 
         @if (uploadedImages.length) {
           <div class="img-grid">
