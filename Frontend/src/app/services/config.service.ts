@@ -8,7 +8,7 @@ interface AppConfig {
 
 @Injectable({ providedIn: 'root' })
 export class ConfigService {
-  private config: AppConfig = { apiUrl: 'http://3.6.86.199:8000'};
+  private config: AppConfig = {  apiUrl: 'http://3.6.86.199'};
 
   constructor(private http: HttpClient) {}
 
