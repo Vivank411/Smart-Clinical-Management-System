@@ -23,10 +23,12 @@ export class AdminSettingsComponent {
   ];
 
   // ── Option lists ───────────────────────────────────────────────────────────
+  // Full 24-hour clock — clinic hours and doctor shifts can span nights.
   readonly timeSlots = [
+    '12:00 AM','01:00 AM','02:00 AM','03:00 AM','04:00 AM','05:00 AM',
     '06:00 AM','07:00 AM','08:00 AM','09:00 AM','10:00 AM','11:00 AM',
     '12:00 PM','01:00 PM','02:00 PM','03:00 PM','04:00 PM','05:00 PM',
-    '06:00 PM','07:00 PM','08:00 PM','09:00 PM',
+    '06:00 PM','07:00 PM','08:00 PM','09:00 PM','10:00 PM','11:00 PM',
   ];
   readonly weekDays = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
   readonly smsProviders = ['Twilio', 'MSG91', 'AWS SNS', 'Custom Gateway'];

@@ -151,13 +151,28 @@
       <!-- Diagnosis -->
       <div class="cs-section">
         <h3 class="cs-section-title">Diagnosis</h3>
-        <input class="cs-text-input" type="text" placeholder="Enter primary diagnosis…" [(ngModel)]="diagnosis"/>
+        <input id="cs-diagnosis" class="cs-text-input" type="text"
+               placeholder="Enter primary diagnosis…" [(ngModel)]="diagnosis"/>
       </div>
 
       <!-- Notes -->
       <div class="cs-section">
-        <h3 class="cs-section-title">Clinical Notes</h3>
+        <div class="cs-section-head">
+          <h3 class="cs-section-title">Clinical Notes</h3>
+          <button class="btn-ai" (click)="generateSummary()" [disabled]="generatingSummary">
+            @if (generatingSummary) {
+              <i class="pi pi-spin pi-spinner"></i> Generating…
+            } @else {
+              <i class="pi pi-sparkles"></i> AI Summary
+            }
+          </button>
+        </div>
         <textarea class="cs-textarea" rows="4" placeholder="Additional clinical observations, treatment plan…" [(ngModel)]="notes"></textarea>
+        @if (summaryError) {
+          <div class="cs-alert cs-alert--warn">
+            <i class="pi pi-exclamation-triangle"></i> AI summary unavailable — {{ summaryError }}
+          </div>
+        }
       </div>
 
       <!-- Feedback -->
@@ -208,6 +223,14 @@
         @if (uploadError) {
           <div class="cs-alert cs-alert--error"><i class="pi pi-exclamation-circle"></i> {{ uploadError }}</div>
         }
+        @if (imageAnalysisError) {
+          <div class="cs-alert cs-alert--warn">
+            <i class="pi pi-exclamation-triangle"></i> AI image analysis unavailable — {{ imageAnalysisError }}
+          </div>
+        }
+        @if (uploadedImages.length) {
+          <p class="ai-hint"><i class="pi pi-sparkles"></i> Hover an image and click the sparkle icon to analyse it with AI.</p>
+        }
 
         @if (uploadedImages.length) {
           <div class="img-grid">
@@ -220,6 +243,15 @@
                 <div class="img-overlay">
                   <p class="img-name">{{ img.name }}</p>
                   <div class="img-overlay-actions">
+                    <button class="img-action-btn img-action-btn--ai" title="Analyse with AI"
+                            [disabled]="analysingImage === img.name"
+                            (click)="analyseImage(img); $event.stopPropagation()">
+                      @if (analysingImage === img.name) {
+                        <i class="pi pi-spin pi-spinner"></i>
+                      } @else {
+                        <i class="pi pi-sparkles"></i>
+                      }
+                    </button>
                     <button class="img-action-btn" title="Annotate" (click)="openAnnotator(img, i); $event.stopPropagation()">
                       <i class="pi pi-pencil"></i>
                     </button>
@@ -380,6 +412,167 @@
         }
       </div>
 
+    </div>
+  </div>
+}
+
+<!-- ── AI Image Analysis ─────────────────────────────────────────────────── -->
+@if (imageAnalysis) {
+  <div class="ai-overlay" (click)="closeImageAnalysis()">
+    <div class="ai-modal" (click)="$event.stopPropagation()" role="dialog" aria-modal="true">
+      <div class="ai-head">
+        <div class="ai-head-icon"><i class="pi pi-sparkles"></i></div>
+        <div class="ai-head-text">
+          <h3 class="ai-title">AI Image Analysis</h3>
+          <p class="ai-sub">{{ imageAnalysis.name }}</p>
+        </div>
+        <button class="ai-close" (click)="closeImageAnalysis()" aria-label="Close"><i class="pi pi-times"></i></button>
+      </div>
+
+      <div class="ai-body">
+        <div class="ai-split">
+          <div class="ai-thumb"><img [src]="imageAnalysis.url" [alt]="imageAnalysis.name"/></div>
+
+          <div class="ai-findings">
+            @if (imageAnalysis.result.imageQuality) {
+              <div class="ai-quality"><i class="pi pi-info-circle"></i> {{ imageAnalysis.result.imageQuality }}</div>
+            }
+
+            @if (imageAnalysis.result.observations.length) {
+              <div class="ai-block">
+                <span class="ai-block-label"><i class="pi pi-eye"></i> Observations</span>
+                <ul class="ai-list">
+                  @for (o of imageAnalysis.result.observations; track o) { <li>{{ o }}</li> }
+                </ul>
+              </div>
+            }
+
+            @if (imageAnalysis.result.possibleConditions.length) {
+              <div class="ai-block">
+                <span class="ai-block-label"><i class="pi pi-list"></i> Possible Conditions</span>
+                @for (c of imageAnalysis.result.possibleConditions; track c.name) {
+                  <div class="ai-cond">
+                    <div class="ai-cond-head">
+                      <span class="ai-cond-name">{{ c.name }}</span>
+                      <span class="ai-conf" [ngClass]="'ai-conf--' + c.confidence">{{ c.confidence }}</span>
+                      @if (isConditionAdded(c.name)) {
+                        <span class="ai-added"><i class="pi pi-check"></i> Added</span>
+                      } @else {
+                        <button class="ai-add" (click)="addConditionToDiagnosis(c.name)"
+                                title="Add this condition to the diagnosis field">
+                          <i class="pi pi-plus"></i> Add to Diagnosis
+                        </button>
+                      }
+                    </div>
+                    <p class="ai-cond-why">{{ c.reasoning }}</p>
+                  </div>
+                }
+              </div>
+            } @else {
+              <p class="ai-empty">No conditions could be suggested from this image.</p>
+            }
+
+            @if (imageAnalysis.result.recommendedNextSteps.length) {
+              <div class="ai-block">
+                <span class="ai-block-label"><i class="pi pi-directions"></i> Suggested Next Steps</span>
+                <ul class="ai-list">
+                  @for (s of imageAnalysis.result.recommendedNextSteps; track s) { <li>{{ s }}</li> }
+                </ul>
+              </div>
+            }
+          </div>
+        </div>
+
+        @if (diagnosis.trim()) {
+          <div class="ai-dx-preview">
+            <span class="ai-dx-label"><i class="pi pi-check-circle"></i> Diagnosis field now reads</span>
+            <p class="ai-dx-value">{{ diagnosis }}</p>
+          </div>
+        }
+
+        <div class="ai-note">
+          <i class="pi pi-info-circle"></i>
+          <p>{{ imageAnalysis.result.disclaimer }}
+            @if (imageAnalysis.result.model) { <span class="ai-model">Model: {{ imageAnalysis.result.model }}</span> }
+          </p>
+        </div>
+      </div>
+
+      <div class="ai-actions">
+        <button class="ai-btn ai-btn--ghost" (click)="closeImageAnalysis()">Close</button>
+        @if (diagnosis.trim()) {
+          <button class="ai-btn ai-btn--primary" (click)="goToDiagnosis()">
+            <i class="pi pi-arrow-right"></i> Go to Diagnosis
+          </button>
+        }
+      </div>
+    </div>
+  </div>
+}
+
+<!-- ── AI Clinical Summary ───────────────────────────────────────────────── -->
+@if (summary) {
+  <div class="ai-overlay" (click)="closeSummary()">
+    <div class="ai-modal ai-modal--narrow" (click)="$event.stopPropagation()" role="dialog" aria-modal="true">
+      <div class="ai-head">
+        <div class="ai-head-icon"><i class="pi pi-file-edit"></i></div>
+        <div class="ai-head-text">
+          <h3 class="ai-title">AI Clinical Summary</h3>
+          <p class="ai-sub">Generated from this visit and the patient's history</p>
+        </div>
+        <button class="ai-close" (click)="closeSummary()" aria-label="Close"><i class="pi pi-times"></i></button>
+      </div>
+
+      <div class="ai-body">
+        @if (summary.summary) {
+          <div class="ai-block">
+            <span class="ai-block-label"><i class="pi pi-align-left"></i> Summary</span>
+            <p class="ai-para">{{ summary.summary }}</p>
+          </div>
+        }
+
+        @if (summary.keyFindings.length) {
+          <div class="ai-block">
+            <span class="ai-block-label"><i class="pi pi-flag"></i> Key Findings</span>
+            <ul class="ai-list">
+              @for (f of summary.keyFindings; track f) { <li>{{ f }}</li> }
+            </ul>
+          </div>
+        }
+
+        @if (summary.missingInformation.length) {
+          <div class="ai-missing">
+            <i class="pi pi-question-circle"></i>
+            <div>
+              <span class="ai-missing-label">Not recorded</span>
+              <ul class="ai-list">
+                @for (m of summary.missingInformation; track m) { <li>{{ m }}</li> }
+              </ul>
+            </div>
+          </div>
+        }
+
+        @if (summary.recommendedNotes) {
+          <div class="ai-block">
+            <span class="ai-block-label"><i class="pi pi-pencil"></i> Draft Consultation Notes</span>
+            <pre class="ai-draft">{{ summary.recommendedNotes }}</pre>
+          </div>
+        }
+
+        <div class="ai-note">
+          <i class="pi pi-info-circle"></i>
+          <p>{{ summary.disclaimer }}
+            @if (summary.model) { <span class="ai-model">Model: {{ summary.model }}</span> }
+          </p>
+        </div>
+      </div>
+
+      <div class="ai-actions">
+        <button class="ai-btn ai-btn--ghost" (click)="closeSummary()">Discard</button>
+        <button class="ai-btn ai-btn--primary" (click)="useRecommendedNotes()" [disabled]="!summary.recommendedNotes">
+          <i class="pi pi-check"></i> Add to Notes
+        </button>
+      </div>
     </div>
   </div>
 }

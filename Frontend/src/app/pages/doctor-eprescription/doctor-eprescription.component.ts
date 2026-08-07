@@ -1,7 +1,7 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { ApiService, ApiPatient, MedicationResponse } from '../../services/api.service';
+import { ApiService, ApiPatient, MedicationResponse, SafetyCheckResult } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
 
 interface MedRow {
@@ -11,6 +11,11 @@ interface MedRow {
   duration: string;
   suggestions: string[];
   showSug: boolean;
+  /** Result of the last safety check for this row; null once the row changes. */
+  safety?: SafetyCheckResult | null;
+  /** Doctor explicitly chose to prescribe despite the conflict. */
+  acknowledged?: boolean;
+  checking?: boolean;
 }
 
 interface ConsultationData {
@@ -87,9 +92,14 @@ export class DoctorEprescriptionComponent implements OnInit {
           const last = prs[prs.length - 1];
           this.rows = last.medications.map(m => ({
             name: m.name, dosage: m.dosage, frequency: m.frequency,
-            duration: m.duration ?? '', suggestions: [], showSug: false
+            duration: m.duration ?? '', suggestions: [], showSug: false,
+            safety: null, acknowledged: false, checking: false
           }));
           this.rxNotes = last.notes ?? '';
+          // Rows carried over from a previous prescription have never been
+          // checked — a pre-filled conflict is exactly the one a doctor is
+          // least likely to notice unaided.
+          this.checkAllRows();
         } else {
           this.addRow();
         }
@@ -99,10 +109,102 @@ export class DoctorEprescriptionComponent implements OnInit {
   }
 
   addRow() {
-    this.rows.push({ name: '', dosage: '500mg', frequency: 'OD (Once daily)', duration: '', suggestions: [], showSug: false });
+    this.rows.push({ name: '', dosage: '500mg', frequency: 'OD (Once daily)', duration: '',
+                     suggestions: [], showSug: false, safety: null, acknowledged: false, checking: false });
   }
 
   removeRow(i: number) { this.rows.splice(i, 1); }
+
+  // ── Clinical safety ────────────────────────────────────────────────────────
+
+  safetyDialog: { row: MedRow; result: SafetyCheckResult } | null = null;
+  showAlternatives = false;
+
+  /**
+   * Runs whenever a row has enough detail to be checkable. Conflicts are
+   * detected server-side by the rule engine; this only presents the result.
+   */
+  runSafetyCheck(row: MedRow, openDialog = true, done?: () => void) {
+    if (!this.selectedPatient || !row.name.trim()) { row.safety = null; done?.(); return; }
+
+    row.checking = true;
+    row.acknowledged = false;
+    this.api.checkMedication({
+      patientId: this.selectedPatient.id,
+      medicine: { name: row.name.trim(), dosage: row.dosage, frequency: row.frequency, duration: row.duration },
+      currentMedicines: this.rows
+        .filter(r => r !== row && r.name.trim())
+        .map(r => ({ name: r.name.trim(), dosage: r.dosage, frequency: r.frequency, duration: r.duration })),
+      doctorName: this.auth.getUser()?.name,
+    }).subscribe({
+      next: (res) => {
+        row.checking = false;
+        row.safety = res.hasConflict ? res : null;
+        if (res.hasConflict && openDialog) this.openSafetyDialog(row);
+        done?.();
+      },
+      // A failed check leaves the row unchecked rather than marking it clean.
+      error: () => { row.checking = false; row.safety = null; done?.(); }
+    });
+  }
+
+  onMedicineCommitted(row: MedRow) {
+    if (row.name.trim()) this.runSafetyCheck(row);
+  }
+
+  /**
+   * Check every filled row without opening a dialog per result, then surface
+   * the most severe conflict once. Used for prescriptions loaded from history.
+   */
+  checkAllRows() {
+    const filled = this.rows.filter(r => r.name.trim());
+    if (!filled.length) return;
+
+    let pending = filled.length;
+    filled.forEach(row => this.runSafetyCheck(row, false, () => {
+      if (--pending > 0) return;
+      const worst = filled.find(r => r.safety?.severity === 'High')
+                 ?? filled.find(r => r.safety?.hasConflict);
+      if (worst) this.openSafetyDialog(worst);
+    }));
+  }
+
+  openSafetyDialog(row: MedRow) {
+    if (!row.safety) return;
+    this.showAlternatives = false;
+    this.safetyDialog = { row, result: row.safety };
+  }
+
+  closeSafetyDialog() {
+    this.safetyDialog = null;
+    this.showAlternatives = false;
+  }
+
+  /** "Proceed Anyway" — keep the medicine, record that the warning was seen. */
+  acknowledgeConflict() {
+    if (this.safetyDialog) this.safetyDialog.row.acknowledged = true;
+    this.closeSafetyDialog();
+  }
+
+  /** "Replace Medicine" — reveal the alternatives picker inside the dialog. */
+  startReplace() {
+    this.showAlternatives = true;
+  }
+
+  chooseAlternative(name: string, defaultDosage?: string) {
+    if (!this.safetyDialog) return;
+    const row = this.safetyDialog.row;
+    row.name = name;
+    if (defaultDosage && this.DOSAGES.includes(defaultDosage)) row.dosage = defaultDosage;
+    row.safety = null;
+    row.acknowledged = false;
+    this.closeSafetyDialog();
+    this.runSafetyCheck(row);   // the replacement is checked in turn
+  }
+
+  get unresolvedConflicts(): MedRow[] {
+    return this.rows.filter(r => r.name.trim() && r.safety?.hasConflict && !r.acknowledged);
+  }
 
   onMedInput(row: MedRow) {
     const q = row.name.trim().toLowerCase();
@@ -114,6 +216,8 @@ export class DoctorEprescriptionComponent implements OnInit {
   pickSuggestion(row: MedRow, name: string) {
     const med = this.allMeds.find(m => m.name === name);
     row.name = name;
+    row.safety = null;
+    row.acknowledged = false;
     // Pre-select the closest matching dosage from dropdown list
     if (med?.defaultDosage) {
       const match = this.DOSAGES.find(d => d.toLowerCase() === med.defaultDosage!.toLowerCase());
@@ -121,6 +225,7 @@ export class DoctorEprescriptionComponent implements OnInit {
     }
     row.suggestions = [];
     row.showSug = false;
+    this.runSafetyCheck(row);
   }
 
   hideSuggestions(row: MedRow) {
@@ -133,6 +238,10 @@ export class DoctorEprescriptionComponent implements OnInit {
 
   proceedToPreview() {
     if (!this.filledRows.length) return;
+    // Surface any conflict the doctor hasn't looked at yet rather than letting
+    // it pass silently into the printed prescription.
+    const unreviewed = this.unresolvedConflicts[0];
+    if (unreviewed) { this.openSafetyDialog(unreviewed); return; }
     this.showPreview = true;
   }
 
