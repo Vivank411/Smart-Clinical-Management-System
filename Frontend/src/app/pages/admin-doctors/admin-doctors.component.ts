@@ -41,10 +41,13 @@ export class AdminDoctorsComponent implements OnInit {
   readonly roleOptions = ['Doctor', 'Junior Doctor'];
   readonly specOptions = ['General Medicine','Cardiology','Dermatology','Orthopedic','ENT','Neurology','Pediatrics','Ophthalmology','Gynecology'];
   readonly availDays   = ['Mon','Tue','Wed','Thu','Fri','Sat'];
+  // Full 24-hour clock so a doctor can be rostered to any shift, including
+  // nights. Selecting 12:00 AM for both from and to reads as round-the-clock.
   readonly timeSlots   = [
+    '12:00 AM','01:00 AM','02:00 AM','03:00 AM','04:00 AM','05:00 AM',
     '06:00 AM','07:00 AM','08:00 AM','09:00 AM','10:00 AM','11:00 AM',
     '12:00 PM','01:00 PM','02:00 PM','03:00 PM','04:00 PM','05:00 PM',
-    '06:00 PM','07:00 PM','08:00 PM','09:00 PM',
+    '06:00 PM','07:00 PM','08:00 PM','09:00 PM','10:00 PM','11:00 PM',
   ];
 
   constructor(private api: ApiService) {}

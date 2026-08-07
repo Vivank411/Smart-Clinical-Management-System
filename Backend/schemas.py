@@ -497,3 +497,96 @@ class PrescriptionResponse(BaseModel):
             prescriptionDate=p.prescription_date,
             notes=p.notes,
         )
+
+
+# ── Clinical Safety Check ─────────────────────────────────────────────────────
+
+class SafetyMedicineItem(BaseModel):
+    name: str
+    dosage: Optional[str] = None
+    frequency: Optional[str] = None
+    duration: Optional[str] = None
+
+
+class SafetyCheckRequest(BaseModel):
+    patientId: int
+    medicine: SafetyMedicineItem
+    currentMedicines: List[SafetyMedicineItem] = []
+    doctorName: Optional[str] = None
+
+
+class SafetyAlternative(BaseModel):
+    name: str
+    drugClass: Optional[str] = None
+    defaultDosage: Optional[str] = None
+
+
+class SafetyCheckResponse(BaseModel):
+    hasConflict: bool
+    severity: Optional[str] = None
+    conflicts: List[dict] = []
+    aiExplanation: str = ""
+    aiSuggestion: str = ""
+    alternatives: List[SafetyAlternative] = []
+    aiModel: Optional[str] = None
+    # False when the AI pass could not run — the prescription has been checked
+    # against the local rules only, and the UI must say so.
+    aiAvailable: bool = False
+    aiDegraded: bool = False
+    disclaimer: str = (
+        "This is an AI-generated alert for clinical assistance only. "
+        "Final decision rests with the physician."
+    )
+
+
+# ── AI Consultation Assist (Gemini) ───────────────────────────────────────────
+
+class ImageAnalysisRequest(BaseModel):
+    patientId: int
+    imageUrl: str                      # base64 data URL from the consultation screen
+    imageName: Optional[str] = None
+    doctorName: Optional[str] = None
+
+
+class PossibleCondition(BaseModel):
+    name: str
+    confidence: str
+    reasoning: str
+
+
+class ImageAnalysisResponse(BaseModel):
+    available: bool
+    reason: Optional[str] = None
+    model: Optional[str] = None
+    imageQuality: str = ""
+    observations: List[str] = []
+    possibleConditions: List[PossibleCondition] = []
+    recommendedNextSteps: List[str] = []
+    disclaimer: str = (
+        "AI-generated image analysis for clinical assistance only. These are "
+        "possibilities to consider, not a diagnosis. Final diagnosis rests with "
+        "the physician."
+    )
+
+
+class ClinicalSummaryRequest(BaseModel):
+    patientId: int
+    symptoms: List[str] = []
+    vitals: dict = {}
+    diagnosis: Optional[str] = None
+    notes: Optional[str] = None
+    doctorName: Optional[str] = None
+
+
+class ClinicalSummaryResponse(BaseModel):
+    available: bool
+    reason: Optional[str] = None
+    model: Optional[str] = None
+    summary: str = ""
+    keyFindings: List[str] = []
+    recommendedNotes: str = ""
+    missingInformation: List[str] = []
+    disclaimer: str = (
+        "AI-generated summary for clinical assistance only. Review before "
+        "accepting into the patient record."
+    )

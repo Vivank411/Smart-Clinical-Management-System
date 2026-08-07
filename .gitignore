@@ -1,0 +1,26 @@
+# Secrets — never commit. Keep a .env.example with placeholder values instead.
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Databases / local data
+*.db
+*.sqlite3
+
+# Node / Angular
+node_modules/
+dist/
+.angular/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

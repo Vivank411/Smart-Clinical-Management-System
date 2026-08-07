@@ -118,11 +118,113 @@ export interface MedicationItem {
   duration?: string;
 }
 
+// ── AI Consultation Assist (Gemini) ──────────────────────────────────────────
+
+export interface ImageAnalysisRequest {
+  patientId: number;
+  imageUrl: string;
+  imageName?: string;
+  doctorName?: string;
+}
+
+export interface PossibleCondition {
+  name: string;
+  confidence: 'high' | 'moderate' | 'low';
+  reasoning: string;
+}
+
+export interface ImageAnalysisResult {
+  available: boolean;
+  reason?: string;
+  model?: string;
+  imageQuality: string;
+  observations: string[];
+  possibleConditions: PossibleCondition[];
+  recommendedNextSteps: string[];
+  disclaimer: string;
+}
+
+export interface ClinicalSummaryRequest {
+  patientId: number;
+  symptoms: string[];
+  vitals: Record<string, string>;
+  diagnosis?: string;
+  notes?: string;
+  doctorName?: string;
+}
+
+export interface ClinicalSummaryResult {
+  available: boolean;
+  reason?: string;
+  model?: string;
+  summary: string;
+  keyFindings: string[];
+  recommendedNotes: string;
+  missingInformation: string[];
+  disclaimer: string;
+}
+
 export interface PrescriptionCreate {
   patientId: number;
   medications: MedicationItem[];
   doctorName?: string;
   notes?: string;
+}
+
+// ── Clinical safety check ────────────────────────────────────────────────────
+
+export interface SafetyMedicineItem {
+  name: string;
+  dosage?: string;
+  frequency?: string;
+  duration?: string;
+}
+
+export interface SafetyCheckRequest {
+  patientId: number;
+  medicine: SafetyMedicineItem;
+  currentMedicines: SafetyMedicineItem[];
+  doctorName?: string;
+}
+
+export interface SafetyConflict {
+  type: 'allergy' | 'interaction' | 'duplicate' | 'dosage';
+  severity: 'High' | 'Moderate' | 'Low';
+  title: string;
+  detail: string;
+  /** 'rule' = matched a database entry; 'ai' = identified by Claude's analysis. */
+  source?: 'rule' | 'ai';
+  relatedTo?: string;
+  medicine?: string;
+  allergen?: string;
+  allergenSeverity?: string;
+  drugClass?: string;
+  otherDrugClass?: string;
+  interactsWith?: string;
+  duplicateOf?: string;
+  prescribedDose?: string;
+  maxDose?: string;
+}
+
+export interface SafetyAlternative {
+  name: string;
+  drugClass?: string;
+  defaultDosage?: string;
+}
+
+export interface SafetyCheckResult {
+  hasConflict: boolean;
+  severity?: 'High' | 'Moderate' | 'Low';
+  conflicts: SafetyConflict[];
+  aiExplanation: string;
+  aiSuggestion: string;
+  alternatives: SafetyAlternative[];
+  aiModel?: string;
+  /** False when the AI pass could not run — rules-only check, must be surfaced. */
+  aiAvailable: boolean;
+  /** True when the AI was unreachable and the text came from the local fallback. */
+  aiDegraded: boolean;
+  disclaimer: string;
 }
 
 export interface PrescriptionResponse {
@@ -364,6 +466,22 @@ export class ApiService {
 
   getPatientPrescriptions(patientId: number): Observable<PrescriptionResponse[]> {
     return this.http.get<PrescriptionResponse[]>(`${this.base}/prescriptions/patient/${patientId}`);
+  }
+
+  // AI consultation assist — paths sit under /consultations to match the
+  // existing CloudFront behaviour for the API origin.
+  analyseClinicalImage(data: ImageAnalysisRequest): Observable<ImageAnalysisResult> {
+    return this.http.post<ImageAnalysisResult>(`${this.base}/consultations/analyse-image`, data);
+  }
+
+  generateClinicalSummary(data: ClinicalSummaryRequest): Observable<ClinicalSummaryResult> {
+    return this.http.post<ClinicalSummaryResult>(`${this.base}/consultations/summary`, data);
+  }
+
+  // Clinical safety — sits under /prescriptions so it matches the existing
+  // CloudFront path behaviour for the API origin.
+  checkMedication(data: SafetyCheckRequest): Observable<SafetyCheckResult> {
+    return this.http.post<SafetyCheckResult>(`${this.base}/prescriptions/check-medication`, data);
   }
 
   // Auth

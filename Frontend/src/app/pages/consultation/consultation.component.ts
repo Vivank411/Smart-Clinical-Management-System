@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { switchMap } from 'rxjs/operators';
-import { ApiService, ApiPatient } from '../../services/api.service';
+import { ApiService, ApiPatient, ImageAnalysisResult, ClinicalSummaryResult } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
 
 interface Vitals { bp: string; pulse: string; temp: string; spo2: string; weight: string; height: string; }
@@ -188,7 +188,123 @@ export class ConsultationComponent implements OnInit {
     return `${base} (${n})${ext}`;
   }
 
-  removeImage(i: number) { this.uploadedImages.splice(i, 1); }
+  removeImage(i: number) {
+    const removed = this.uploadedImages[i];
+    this.uploadedImages.splice(i, 1);
+    if (this.imageAnalysis?.name === removed?.name) this.imageAnalysis = null;
+  }
+
+  // ── AI: clinical image analysis ────────────────────────────────────────────
+  // Suggestions only. Nothing here writes to the record — the doctor copies a
+  // condition into the diagnosis field explicitly, or ignores it.
+
+  imageAnalysis: { name: string; url: string; result: ImageAnalysisResult } | null = null;
+  analysingImage = '';        // name of the image currently being analysed
+  imageAnalysisError = '';
+
+  analyseImage(img: ImageItem) {
+    if (!this.patient || this.analysingImage) return;
+    this.analysingImage = img.name;
+    this.imageAnalysisError = '';
+
+    this.api.analyseClinicalImage({
+      patientId: this.patient.id,
+      imageUrl: img.url,
+      imageName: img.name,
+      doctorName: this.auth.getUser()?.name,
+    }).subscribe({
+      next: (result) => {
+        this.analysingImage = '';
+        if (!result.available) {
+          this.imageAnalysisError = result.reason || 'Image analysis is unavailable.';
+          return;
+        }
+        this.addedConditions.clear();
+        this.imageAnalysis = { name: img.name, url: img.url, result };
+      },
+      error: () => {
+        this.analysingImage = '';
+        this.imageAnalysisError = 'Could not reach the analysis service.';
+      }
+    });
+  }
+
+  closeImageAnalysis() { this.imageAnalysis = null; }
+
+  /** Conditions the doctor has accepted from this analysis, for button state. */
+  addedConditions = new Set<string>();
+
+  isConditionAdded(name: string): boolean {
+    return this.addedConditions.has(name)
+        || this.diagnosis.toLowerCase().includes(name.toLowerCase());
+  }
+
+  /** Doctor accepts a suggested condition — appended to the diagnosis field. */
+  addConditionToDiagnosis(name: string) {
+    if (!this.isConditionAdded(name)) {
+      const current = this.diagnosis.trim();
+      this.diagnosis = current ? `${current}, ${name}` : name;
+      this.onFieldEdit();
+    }
+    this.addedConditions.add(name);
+  }
+
+  /** Close the analysis and jump to the field the condition was written into. */
+  goToDiagnosis() {
+    this.closeImageAnalysis();
+    this.activeTab = 'clinical';
+    setTimeout(() => {
+      const field = document.getElementById('cs-diagnosis') as HTMLInputElement | null;
+      field?.focus();
+      field?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 60);
+  }
+
+  // ── AI: clinical summary ───────────────────────────────────────────────────
+
+  summary: ClinicalSummaryResult | null = null;
+  generatingSummary = false;
+  summaryError = '';
+
+  generateSummary() {
+    if (!this.patient || this.generatingSummary) return;
+    this.generatingSummary = true;
+    this.summaryError = '';
+
+    this.api.generateClinicalSummary({
+      patientId: this.patient.id,
+      symptoms: this.symptoms,
+      vitals: { ...this.vitals } as unknown as Record<string, string>,
+      diagnosis: this.diagnosis,
+      notes: this.notes,
+      doctorName: this.auth.getUser()?.name,
+    }).subscribe({
+      next: (result) => {
+        this.generatingSummary = false;
+        if (!result.available) {
+          this.summaryError = result.reason || 'Summary generation is unavailable.';
+          return;
+        }
+        this.summary = result;
+      },
+      error: () => {
+        this.generatingSummary = false;
+        this.summaryError = 'Could not reach the summary service.';
+      }
+    });
+  }
+
+  closeSummary() { this.summary = null; }
+
+  /** Doctor accepts the draft notes — appended below anything already written. */
+  useRecommendedNotes() {
+    if (!this.summary?.recommendedNotes) return;
+    const existing = this.notes.trim();
+    this.notes = existing
+      ? `${existing}\n\n${this.summary.recommendedNotes}`
+      : this.summary.recommendedNotes;
+    this.closeSummary();
+  }
 
   // ── Annotation ────────────────────────────────────────
 

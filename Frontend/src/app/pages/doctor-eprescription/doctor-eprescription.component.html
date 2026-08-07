@@ -150,9 +150,21 @@
                   <td class="rx-med-cell">
                     <div class="med-autocomplete">
                       <input class="rx-input" type="text" placeholder="Type medicine name…"
+                        [class.rx-input--conflict]="row.safety?.hasConflict && !row.acknowledged"
+                        [class.rx-input--ack]="row.safety?.hasConflict && row.acknowledged"
                         [(ngModel)]="row.name" (input)="onMedInput(row)"
-                        (blur)="hideSuggestions(row)" (focus)="onMedInput(row)"
+                        (blur)="hideSuggestions(row); onMedicineCommitted(row)" (focus)="onMedInput(row)"
                         autocomplete="off"/>
+                      @if (row.checking) {
+                        <i class="pi pi-spin pi-spinner med-status med-status--checking" title="Checking for conflicts…"></i>
+                      } @else if (row.safety?.hasConflict) {
+                        <button type="button" class="med-status med-status--alert"
+                                [class.med-status--ack]="row.acknowledged"
+                                (click)="openSafetyDialog(row)"
+                                [title]="row.acknowledged ? 'Conflict acknowledged — click to review' : 'Conflict detected — click to review'">
+                          <i class="pi pi-exclamation-triangle"></i>
+                        </button>
+                      }
                       @if (row.showSug && row.suggestions.length) {
                         <div class="med-sug-box">
                           @for (s of row.suggestions; track s) {
@@ -213,6 +225,11 @@
       <div class="ep-action-bar">
         @if (!filledRows.length) {
           <span class="ep-hint"><i class="pi pi-info-circle"></i> Add at least one medicine to proceed</span>
+        } @else if (unresolvedConflicts.length) {
+          <span class="ep-hint ep-hint--warn">
+            <i class="pi pi-exclamation-triangle"></i>
+            {{ unresolvedConflicts.length }} unreviewed conflict{{ unresolvedConflicts.length > 1 ? 's' : '' }}
+          </span>
         }
         <button class="btn-proceed" (click)="proceedToPreview()" [disabled]="!filledRows.length">
           Proceed <i class="pi pi-arrow-right"></i>
@@ -406,6 +423,153 @@
     <div class="rx-lightbox-inner" (click)="$event.stopPropagation()">
       <button class="rx-lightbox-close" (click)="zoomedImage = null"><i class="pi pi-times"></i></button>
       <img [src]="zoomedImage" alt="Clinical image"/>
+    </div>
+  </div>
+}
+
+<!-- ── AI Clinical Safety Alert ──────────────────────────────────────────── -->
+@if (safetyDialog) {
+  <div class="cs-overlay" (click)="closeSafetyDialog()">
+    <div class="cs-modal" (click)="$event.stopPropagation()" role="dialog" aria-modal="true"
+         aria-labelledby="cs-title">
+      <div class="cs-head">
+        <div class="cs-head-icon"><i class="pi pi-exclamation-triangle"></i></div>
+        <h3 class="cs-title" id="cs-title">AI Conflict Alert</h3>
+        <button class="cs-close" (click)="closeSafetyDialog()" aria-label="Close"><i class="pi pi-times"></i></button>
+      </div>
+
+      <div class="cs-body">
+        @for (c of safetyDialog.result.conflicts; track $index) {
+          <div class="cs-banner" [class.cs-banner--mod]="c.severity !== 'High'">
+            <i class="pi" [ngClass]="c.type === 'allergy' ? 'pi-ban' : c.type === 'interaction' ? 'pi-share-alt' : c.type === 'duplicate' ? 'pi-copy' : 'pi-chart-line'"></i>
+            <div class="cs-banner-body">
+              <p class="cs-banner-title">
+                {{ c.title }}
+                @if (c.source === 'ai') {
+                  <span class="cs-src cs-src--ai" title="Identified by AI analysis, not a database rule">
+                    <i class="pi pi-sparkles"></i> AI-identified
+                  </span>
+                } @else {
+                  <span class="cs-src cs-src--rule" title="Matched a verified entry in the clinical database">
+                    <i class="pi pi-check-circle"></i> Database-verified
+                  </span>
+                }
+              </p>
+              <p class="cs-banner-text">{{ c.detail }}</p>
+            </div>
+          </div>
+
+          @if (c.source === 'ai') {
+            <div class="cs-facts">
+              <div class="cs-fact">
+                <span class="cs-fact-label"><i class="pi pi-link"></i> Medicine</span>
+                <p class="cs-fact-main">{{ c.medicine }}</p>
+              </div>
+              @if (c.relatedTo) {
+                <div class="cs-fact">
+                  <span class="cs-fact-label"><i class="pi pi-share-alt"></i> Related To</span>
+                  <p class="cs-fact-main cs-fact-main--danger">{{ c.relatedTo }}</p>
+                </div>
+              }
+            </div>
+          } @else {
+
+          <div class="cs-facts">
+            @if (c.type === 'allergy') {
+              <div class="cs-fact">
+                <span class="cs-fact-label"><i class="pi pi-user"></i> Patient Allergy</span>
+                <p class="cs-fact-main cs-fact-main--danger">• {{ c.allergen }}</p>
+                @if (c.allergenSeverity) {
+                  <span class="cs-sev">{{ c.allergenSeverity }} Severity</span>
+                }
+              </div>
+              <div class="cs-fact">
+                <span class="cs-fact-label"><i class="pi pi-link"></i> Selected Medicine</span>
+                <p class="cs-fact-main">{{ c.medicine }} {{ safetyDialog.row.dosage }}</p>
+                @if (c.drugClass) {
+                  <p class="cs-fact-sub">Belongs to: <span class="cs-fact-em">{{ c.drugClass }}</span></p>
+                }
+              </div>
+            } @else if (c.type === 'interaction') {
+              <div class="cs-fact">
+                <span class="cs-fact-label"><i class="pi pi-link"></i> Selected Medicine</span>
+                <p class="cs-fact-main">{{ c.medicine }}</p>
+                <p class="cs-fact-sub">{{ c.drugClass }}</p>
+              </div>
+              <div class="cs-fact">
+                <span class="cs-fact-label"><i class="pi pi-share-alt"></i> Interacts With</span>
+                <p class="cs-fact-main cs-fact-main--danger">{{ c.interactsWith }}</p>
+                <p class="cs-fact-sub">{{ c.otherDrugClass }}</p>
+              </div>
+            } @else if (c.type === 'duplicate') {
+              <div class="cs-fact">
+                <span class="cs-fact-label"><i class="pi pi-link"></i> Selected Medicine</span>
+                <p class="cs-fact-main">{{ c.medicine }}</p>
+              </div>
+              <div class="cs-fact">
+                <span class="cs-fact-label"><i class="pi pi-copy"></i> Already Prescribed</span>
+                <p class="cs-fact-main cs-fact-main--danger">{{ c.duplicateOf }}</p>
+                @if (c.drugClass) { <p class="cs-fact-sub">{{ c.drugClass }}</p> }
+              </div>
+            } @else {
+              <div class="cs-fact">
+                <span class="cs-fact-label"><i class="pi pi-link"></i> Prescribed</span>
+                <p class="cs-fact-main cs-fact-main--danger">{{ c.prescribedDose }}</p>
+              </div>
+              <div class="cs-fact">
+                <span class="cs-fact-label"><i class="pi pi-check-circle"></i> Recommended Maximum</span>
+                <p class="cs-fact-main">{{ c.maxDose }}</p>
+              </div>
+            }
+          </div>
+          }
+        }
+
+        @if (safetyDialog.result.aiExplanation) {
+          <div class="cs-ai">
+            <span class="cs-ai-label"><i class="pi pi-sparkles"></i> AI Explanation</span>
+            <p class="cs-ai-text">{{ safetyDialog.result.aiExplanation }}</p>
+          </div>
+        }
+
+        @if (safetyDialog.result.aiSuggestion) {
+          <div class="cs-suggest">
+            <i class="pi pi-lightbulb"></i>
+            <p><strong>AI Suggestion:</strong> {{ safetyDialog.result.aiSuggestion }}</p>
+          </div>
+        }
+
+        @if (showAlternatives) {
+          <div class="cs-alts">
+            <span class="cs-alts-label">Choose a replacement</span>
+            @if (safetyDialog.result.alternatives.length) {
+              @for (alt of safetyDialog.result.alternatives; track alt.name) {
+                <button class="cs-alt" (click)="chooseAlternative(alt.name, alt.defaultDosage)">
+                  <span class="cs-alt-name">{{ alt.name }}</span>
+                  @if (alt.drugClass) { <span class="cs-alt-class">{{ alt.drugClass }}</span> }
+                  <i class="pi pi-arrow-right"></i>
+                </button>
+              }
+            } @else {
+              <p class="cs-alts-empty">
+                No alternative in the same category is free of this conflict. Clear the
+                medicine field and choose manually.
+              </p>
+            }
+          </div>
+        }
+
+        <div class="cs-note">
+          <i class="pi pi-info-circle"></i>
+          <p>{{ safetyDialog.result.disclaimer }}</p>
+        </div>
+      </div>
+
+      <div class="cs-actions">
+        <button class="cs-btn cs-btn--ghost" (click)="closeSafetyDialog()">Cancel</button>
+        <button class="cs-btn cs-btn--danger" (click)="acknowledgeConflict()">Proceed Anyway</button>
+        <button class="cs-btn cs-btn--primary" (click)="startReplace()">Replace Medicine</button>
+      </div>
     </div>
   </div>
 }

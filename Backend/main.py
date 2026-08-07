@@ -9,9 +9,15 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 from typing import List, Optional
 
+import json as _json
+
 import models
 import schemas
 import email_service
+import clinical_safety
+import ai_service
+import vision_service
+from safety_seed import seed_clinical_safety, sync_patient_allergies
 from database import engine, SessionLocal, get_db
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -151,6 +157,10 @@ async def lifespan(app: FastAPI):
         conn.execute(text("ALTER TABLE receptionists ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE"))
         conn.execute(text("ALTER TABLE admins ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE"))
         conn.execute(text("ALTER TABLE admins ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE"))
+        # Clinical safety fields on the medicine master
+        conn.execute(text("ALTER TABLE medications ADD COLUMN IF NOT EXISTS drug_class VARCHAR(120)"))
+        conn.execute(text("ALTER TABLE medications ADD COLUMN IF NOT EXISTS max_single_dose_mg INTEGER"))
+        conn.execute(text("ALTER TABLE medications ADD COLUMN IF NOT EXISTS max_daily_dose_mg  INTEGER"))
         conn.commit()
 
     # Create any new tables (e.g. receptionists) that don't exist yet
@@ -198,6 +208,7 @@ async def lifespan(app: FastAPI):
                     adm.password = _hash(a["password"])
 
         db.commit()
+        seed_clinical_safety(db)
     finally:
         db.close()
     yield
@@ -1064,6 +1075,8 @@ def create_patient(patient: schemas.PatientCreate, request: Request, db: Session
         id_proof_number=patient.idProofNumber,
     )
     db.add(db_patient)
+    db.flush()
+    sync_patient_allergies(db, db_patient)   # keep the safety-check table in step
     db.commit()
     db.refresh(db_patient)
     log_audit(db, request, "Patient Registered", "Patient Management",
@@ -1220,6 +1233,9 @@ def update_patient(patient_id: int, patient_data: schemas.PatientUpdate, request
         value = getattr(patient_data, schema_field, None)
         if value is not None:
             setattr(patient, model_field, value)
+
+    if getattr(patient_data, "allergies", None) is not None:
+        sync_patient_allergies(db, patient)   # keep the safety-check table in step
 
     # Capture check-in time
     if patient_data.status == "Checked-In" and not patient.checkin_time:
@@ -1382,6 +1398,222 @@ def get_medications(search: str = "", db: Session = Depends(get_db)):
     if search.strip():
         query = query.filter(models.Medication.name.ilike(f"%{search.strip()}%"))
     return [schemas.MedicationResponse.from_orm_medication(m) for m in query.all()]
+
+
+# ── AI Consultation Assist ───────────────────────────────────────────────────
+# Both paths sit under /consultations so they match the existing CloudFront
+# behaviour for the API origin.
+
+@app.post(
+    "/consultations/analyse-image",
+    response_model=schemas.ImageAnalysisResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Analyse a clinical image and suggest conditions for the doctor to consider",
+    tags=["Consultations"],
+)
+def analyse_clinical_image(payload: schemas.ImageAnalysisRequest, db: Session = Depends(get_db)):
+    patient = db.query(models.Patient).filter(models.Patient.id == payload.patientId).first()
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+
+    consultation = {}
+    if patient.medical_history:
+        try:
+            consultation = _json.loads(patient.medical_history)
+        except (ValueError, TypeError):
+            consultation = {"jrNotes": patient.medical_history}
+
+    result = vision_service.analyse_clinical_image(payload.imageUrl, {
+        "age": patient.age,
+        "gender": patient.gender,
+        "reasonForVisit": patient.reason_for_visit,
+        "symptoms": consultation.get("symptoms", []),
+        "allergies": [a.strip() for a in (patient.allergies or "").split(",") if a.strip()],
+        "notes": consultation.get("jrNotes"),
+    })
+
+    return schemas.ImageAnalysisResponse(
+        available=result["available"],
+        reason=result.get("reason"),
+        model=result.get("model"),
+        imageQuality=result["imageQuality"],
+        observations=result["observations"],
+        possibleConditions=[schemas.PossibleCondition(**c) for c in result["possibleConditions"]],
+        recommendedNextSteps=result["recommendedNextSteps"],
+    )
+
+
+@app.post(
+    "/consultations/summary",
+    response_model=schemas.ClinicalSummaryResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Generate a clinical summary and draft notes from this visit plus prior history",
+    tags=["Consultations"],
+)
+def generate_clinical_summary(payload: schemas.ClinicalSummaryRequest, db: Session = Depends(get_db)):
+    patient = db.query(models.Patient).filter(models.Patient.id == payload.patientId).first()
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+
+    # Prior visits — the structured consultation blobs written by earlier sessions.
+    past_consultations = []
+    for c in db.query(models.Consultation).filter(
+        models.Consultation.patient_id == payload.patientId
+    ).all():
+        entry = {"date": str(getattr(c, "consultation_date", "") or "")}
+        for field in ("symptoms", "diagnosis", "notes"):
+            value = getattr(c, field, None)
+            if value:
+                entry[field] = value
+        past_consultations.append(entry)
+
+    past_prescriptions = []
+    for p in db.query(models.Prescription).filter(
+        models.Prescription.patient_id == payload.patientId
+    ).all():
+        try:
+            meds = _json.loads(p.medications)
+        except (ValueError, TypeError):
+            meds = []
+        past_prescriptions.append({
+            "date": str(p.prescription_date),
+            "medicines": [m.get("name") for m in meds if isinstance(m, dict)],
+            "notes": p.notes,
+        })
+
+    jr_notes = None
+    if patient.medical_history:
+        try:
+            jr_notes = _json.loads(patient.medical_history).get("jrNotes")
+        except (ValueError, TypeError):
+            jr_notes = patient.medical_history
+
+    result = vision_service.generate_clinical_summary({
+        "patient": {
+            "age": patient.age,
+            "gender": patient.gender,
+            "knownAllergies": [a.strip() for a in (patient.allergies or "").split(",") if a.strip()],
+            "reasonForVisit": patient.reason_for_visit,
+        },
+        "thisVisit": {
+            "juniorDoctorNotes": jr_notes,
+            "symptoms": payload.symptoms,
+            "vitals": payload.vitals,
+            "workingDiagnosis": payload.diagnosis,
+            "doctorNotes": payload.notes,
+        },
+        "priorConsultations": past_consultations,
+        "priorPrescriptions": past_prescriptions,
+    })
+
+    return schemas.ClinicalSummaryResponse(
+        available=result["available"],
+        reason=result.get("reason"),
+        model=result.get("model"),
+        summary=result["summary"],
+        keyFindings=result["keyFindings"],
+        recommendedNotes=result["recommendedNotes"],
+        missingInformation=result["missingInformation"],
+    )
+
+
+# ── Clinical Safety Check ────────────────────────────────────────────────────
+# Path deliberately sits under /prescriptions so it matches the existing
+# CloudFront `/prescriptions*` behaviour — a new top-level path would fall
+# through to the S3 default behaviour and 403 in production.
+
+@app.post(
+    "/prescriptions/check-medication",
+    response_model=schemas.SafetyCheckResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Check a medicine for allergy, interaction, duplicate and dosage conflicts",
+    tags=["Prescriptions"],
+)
+def check_medication(payload: schemas.SafetyCheckRequest, db: Session = Depends(get_db)):
+    import json as _json
+
+    patient = db.query(models.Patient).filter(models.Patient.id == payload.patientId).first()
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+
+    current = [m.model_dump() for m in payload.currentMedicines]
+
+    # ── Layer 1: deterministic rules. Always runs, never blocked by the network.
+    conflicts = clinical_safety.run_all_checks(
+        db, payload.patientId, payload.medicine.name,
+        payload.medicine.dosage or "", payload.medicine.frequency or "", current,
+    )
+    for c in conflicts:
+        c["source"] = "rule"
+
+    med = db.query(models.Medication).filter(
+        models.Medication.name.ilike(payload.medicine.name.strip())
+    ).first()
+
+    # Each candidate is re-run through the full check, so an offered alternative
+    # can never be something that would itself raise an alert for this patient.
+    candidates = clinical_safety.suggest_alternatives(db, med, payload.patientId, current)
+
+    allergy_names = [
+        a.display_name for a in db.query(models.PatientAllergy).filter(
+            models.PatientAllergy.patient_id == payload.patientId
+        ).all()
+    ]
+    # Pass the raw free-text column too — an allergen with no mapping row is
+    # invisible to the rules but the model can still reason about it.
+    if patient.allergies:
+        for raw in patient.allergies.split(","):
+            if raw.strip() and raw.strip() not in allergy_names:
+                allergy_names.append(raw.strip())
+
+    # ── Layer 2: AI analysis over the whole prescription. Runs even when the
+    # rules found nothing — the local reference tables cover only a fraction of
+    # real interactions, so "no rule conflict" is not the same as "safe".
+    ai = ai_service.analyse_prescription(
+        conflicts,
+        {"age": patient.age, "gender": patient.gender, "allergies": allergy_names},
+        {**payload.medicine.model_dump(), "drugClass": med.drug_class if med else None},
+        current,
+        candidates,
+    )
+
+    all_conflicts = conflicts + ai["additionalConflicts"]
+    all_conflicts.sort(
+        key=lambda c: clinical_safety.SEVERITY_RANK.get(c["severity"], 0), reverse=True
+    )
+
+    if not all_conflicts:
+        return schemas.SafetyCheckResponse(
+            hasConflict=False, conflicts=[], aiAvailable=ai["available"], aiModel=ai["model"],
+        )
+
+    chosen = [c for c in candidates if c["name"] in ai["alternatives"]] or candidates[:3]
+
+    db.add(models.SafetyCheckLog(
+        patient_id=payload.patientId,
+        doctor_name=payload.doctorName,
+        medicine=payload.medicine.name,
+        dosage=payload.medicine.dosage,
+        frequency=payload.medicine.frequency,
+        conflicts_json=_json.dumps(all_conflicts),
+        ai_explanation=ai["explanation"],
+        ai_suggestion=ai["suggestion"],
+        ai_model=ai["model"],
+        checked_at=datetime.now().isoformat(timespec="seconds"),
+    ))
+    db.commit()
+
+    return schemas.SafetyCheckResponse(
+        hasConflict=True,
+        severity=all_conflicts[0]["severity"],
+        conflicts=all_conflicts,
+        aiExplanation=ai["explanation"],
+        aiSuggestion=ai["suggestion"],
+        alternatives=[schemas.SafetyAlternative(**c) for c in chosen],
+        aiModel=ai["model"],
+        aiAvailable=ai["available"],
+        aiDegraded=not ai["available"],
+    )
 
 
 # ── Prescriptions ────────────────────────────────────────────────────────────
