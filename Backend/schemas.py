@@ -4,6 +4,21 @@ from typing import Optional, List
 import re
 
 
+_EMAIL_PATTERN = re.compile(r'^[^@\s]+@[^@\s.]+(\.[^@\s.]+)+$')
+
+
+def _validate_optional_email(v):
+    """Blank/None means 'not supplied' — the field is never mandatory."""
+    if v is None:
+        return None
+    v = v.strip()
+    if not v:
+        return None
+    if not _EMAIL_PATTERN.match(v):
+        raise ValueError("Enter a valid email address")
+    return v.lower()
+
+
 _ID_PATTERNS = {
     'Aadhaar Card':    re.compile(r'^\d{12}$'),
     'PAN Card':        re.compile(r'^[A-Z]{5}\d{4}[A-Z]$'),
@@ -20,6 +35,8 @@ class PatientCreate(BaseModel):
     dob: date
     age: int = Field(..., ge=0, le=150)
     mobileNumber: str = Field(..., min_length=10, max_length=10)
+    # Optional — used to email the patient their prescription. Blank is fine.
+    email: Optional[str] = Field(None, max_length=150)
     idProofType:   Optional[str] = Field(None, max_length=50)
     idProofNumber: Optional[str] = Field(None, max_length=30)
     # Optional legacy / extra fields
@@ -32,6 +49,11 @@ class PatientCreate(BaseModel):
     @classmethod
     def normalise_id_number(cls, v):
         return v.strip().upper() if v else v
+
+    @field_validator('email')
+    @classmethod
+    def normalise_email(cls, v):
+        return _validate_optional_email(v)
 
     @model_validator(mode='after')
     def validate_id_format(self):
@@ -98,6 +120,7 @@ class PatientUpdate(BaseModel):
     gender: Optional[str] = None
     dob: Optional[date] = None
     age: Optional[int] = Field(None, ge=0, le=150)
+    email: Optional[str] = Field(None, max_length=150)
     insuranceCompany: Optional[str] = Field(None, max_length=150)
     addressLine1: Optional[str] = Field(None, min_length=1, max_length=200)
     addressLine2: Optional[str] = Field(None, max_length=200)
@@ -147,6 +170,11 @@ class PatientUpdate(BaseModel):
             raise ValueError("City must contain only letters and spaces")
         return v.strip() if v else v
 
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, v):
+        return _validate_optional_email(v)
+
 
 class PatientResponse(BaseModel):
     id: int
@@ -156,6 +184,7 @@ class PatientResponse(BaseModel):
     dob: date
     age: int
     mobileNumber: Optional[str]
+    email: Optional[str] = None
     insuranceCompany: Optional[str]
     addressLine1: Optional[str]
     addressLine2: Optional[str]
@@ -170,6 +199,7 @@ class PatientResponse(BaseModel):
     checkinTime: Optional[str]
     idProofType:   Optional[str] = None
     idProofNumber: Optional[str] = None
+    paymentStatus: Optional[str] = None
 
 
     model_config = {"from_attributes": True}
@@ -184,6 +214,7 @@ class PatientResponse(BaseModel):
             dob=patient.dob,
             age=patient.age,
             mobileNumber=patient.mobile_number,
+            email=patient.email,
             insuranceCompany=patient.insurance_company,
             addressLine1=patient.address_line1,
             addressLine2=patient.address_line2,
@@ -198,6 +229,7 @@ class PatientResponse(BaseModel):
             checkinTime=patient.checkin_time,
             idProofType=patient.id_proof_type,
             idProofNumber=patient.id_proof_number,
+            paymentStatus=patient.payment_status,
         )
 
 
@@ -368,18 +400,61 @@ class DepartmentStat(BaseModel):
 
 class PeakHour(BaseModel):
     hour: str
-    mins: float
+    # Number of check-ins in this two-hour bucket. Previously this reported a
+    # derived "waiting minutes" figure that no other chart agreed with.
+    count: int
 
 
 class WeeklySummary(BaseModel):
+    # Distinct patients a doctor consulted.
     totalPatients: int
+    # Distinct patients who arrived at the desk. Always >= totalPatients:
+    # payment is taken at check-in, before the doctor sees them.
+    patientsCheckedIn: int
     totalConsultations: int
     avgWaitingTime: int
     cancelledConsultations: int
-    patientsChange: float
-    consultationsChange: float
+    # None when the previous window had no activity to compare against.
+    patientsChange: Optional[float] = None
+    consultationsChange: Optional[float] = None
     waitingTimeChange: int
     cancelledChange: float
+
+
+class RevenueDay(BaseModel):
+    day: str
+    amount: float
+
+
+class PaymentMethodStat(BaseModel):
+    method: str
+    label: str
+    count: int
+    amount: float
+    percentage: float
+
+
+class PaymentSummary(BaseModel):
+    totalCollected: float
+    transactionCount: int
+    payingPatients: int
+    averagePerPatient: float
+    # None when nothing was collected in the previous window.
+    collectedChange: Optional[float] = None
+    # Visits in the window that were checked in but never paid for.
+    outstandingVisits: int
+    byMethod: List[PaymentMethodStat]
+
+
+class TopPayer(BaseModel):
+    patientId: int
+    patientCode: str
+    name: str
+    amount: float
+    payments: int
+    methods: str
+    # Highest amount in the list, so the UI can size the bars.
+    maxAmount: float
 
 
 class AuditLogFull(BaseModel):
@@ -484,6 +559,9 @@ class PrescriptionResponse(BaseModel):
     doctorName: Optional[str]
     prescriptionDate: date
     notes: Optional[str]
+    # Set once the prescription has been pushed to the patient.
+    sentEmailAt: Optional[str] = None
+    sentWhatsappAt: Optional[str] = None
 
     @classmethod
     def from_orm_prescription(cls, p):
@@ -496,7 +574,133 @@ class PrescriptionResponse(BaseModel):
             doctorName=p.doctor_name,
             prescriptionDate=p.prescription_date,
             notes=p.notes,
+            sentEmailAt=p.sent_email_at,
+            sentWhatsappAt=p.sent_whatsapp_at,
         )
+
+
+# ── Payments (counter collection) ─────────────────────────────────────────────
+
+PAYMENT_METHODS = {"qr", "card", "cash"}
+
+
+class PaymentConfig(BaseModel):
+    """What the payment screen needs before anything is collected."""
+    amount: str
+    currency: str
+    purpose: str
+    # The clinic's uploaded QR image (data URL), and the label under it.
+    qrImage: Optional[str] = None
+    qrLabel: Optional[str] = None
+    qrConfigured: bool = False
+
+
+class PaymentQrUpdate(BaseModel):
+    """Admin uploading the clinic's payment QR."""
+    # data:image/png;base64,... — validated in the endpoint.
+    image: Optional[str] = None
+    label: Optional[str] = Field(None, max_length=120)
+
+
+class PaymentInitiateRequest(BaseModel):
+    patientId: int
+    method: str
+
+    @field_validator("method")
+    @classmethod
+    def validate_method(cls, v):
+        if v not in PAYMENT_METHODS:
+            raise ValueError("Method must be one of: qr, card, cash")
+        return v
+
+
+class PaymentConfirmRequest(BaseModel):
+    """
+    Receptionist confirming money is in hand.
+
+    `reference` and `cardLast4` are for reconciling against the bank statement.
+    Full card numbers, expiry dates and CVVs are deliberately not accepted —
+    see the endpoint for why.
+    """
+    collectedBy: Optional[str] = Field(None, max_length=120)
+    reference: Optional[str] = Field(None, max_length=60)
+    cardLast4: Optional[str] = Field(None, max_length=4)
+    notes: Optional[str] = Field(None, max_length=300)
+
+    @field_validator("cardLast4")
+    @classmethod
+    def validate_last4(cls, v):
+        if v is None or not v.strip():
+            return None
+        v = v.strip()
+        if not (v.isdigit() and len(v) == 4):
+            raise ValueError("Card last-4 must be exactly 4 digits")
+        return v
+
+    @field_validator("reference")
+    @classmethod
+    def validate_reference(cls, v):
+        if v is None or not v.strip():
+            return None
+        v = v.strip()
+        # A 13-19 digit run is a card number, not a reference. Refuse it rather
+        # than quietly writing a PAN into the database.
+        digits = "".join(ch for ch in v if ch.isdigit())
+        if len(digits) >= 13:
+            raise ValueError(
+                "That looks like a full card number. Enter only the approval or "
+                "reference code from the card machine receipt."
+            )
+        return v
+
+
+class PaymentStatusResponse(BaseModel):
+    txnid: str
+    status: str
+    amount: str
+    currency: str
+    method: str
+    purpose: Optional[str] = None
+    patientId: int
+    patientName: str
+    patientCode: str
+    # Only present once the payment has been confirmed.
+    queueToken: Optional[str] = None
+    reference: Optional[str] = None
+    cardLast4: Optional[str] = None
+    collectedBy: Optional[str] = None
+    notes: Optional[str] = None
+    completedAt: Optional[str] = None
+
+
+class PrescriptionSendRequest(BaseModel):
+    """Deliver a saved prescription to the patient."""
+    channel: str                                  # "email" | "whatsapp"
+    # Optional overrides — default to whatever is on the patient record.
+    email: Optional[str] = Field(None, max_length=150)
+    mobile: Optional[str] = Field(None, max_length=15)
+
+    @field_validator("channel")
+    @classmethod
+    def validate_channel(cls, v):
+        if v not in {"email", "whatsapp"}:
+            raise ValueError("Channel must be either 'email' or 'whatsapp'")
+        return v
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, v):
+        return _validate_optional_email(v)
+
+
+class PrescriptionSendResponse(BaseModel):
+    sent: bool
+    channel: str
+    target: str
+    message: str
+    # WhatsApp has no server-side send path without a business API account, so
+    # the browser opens a pre-filled chat instead.
+    whatsappUrl: Optional[str] = None
 
 
 # ── Clinical Safety Check ─────────────────────────────────────────────────────

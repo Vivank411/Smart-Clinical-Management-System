@@ -90,7 +90,12 @@ def make_patient(db):
         age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
         p = models.Patient(name=name, gender=extra.pop("gender", "Male"), dob=dob,
                            age=extra.pop("age", age), mobile_number=mobile,
-                           status=extra.pop("status", "Registered"), **extra)
+                           status=extra.pop("status", "Registered"),
+                           # A fully registered patient: the fee is settled, so
+                           # tests unrelated to payment are not blocked by the
+                           # gate. Payment tests pass payment_status explicitly.
+                           payment_status=extra.pop("payment_status", "Paid"),
+                           **extra)
         db.add(p); db.commit(); db.refresh(p)
         return p
 

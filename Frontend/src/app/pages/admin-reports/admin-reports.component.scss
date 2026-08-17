@@ -82,8 +82,10 @@
   display: flex; flex-direction: column; justify-content: space-between;
   font-size: 10px; color: #94a3b8; text-align: right; width: 24px;
 }
-.svg-wrap { flex: 1; overflow: visible; }
-.line-svg { overflow: visible; }
+.svg-wrap { flex: 1; overflow: visible; min-width: 0; }
+// Without an explicit height the SVG sizes itself from its viewBox aspect
+// ratio, so the plot no longer lines up with the y-axis labels beside it.
+.line-svg { display: block; width: 100%; height: 100%; overflow: visible; }
 
 .chart-x-labels {
   display: flex; justify-content: space-between; font-size: 10.5px; color: #94a3b8;
@@ -91,6 +93,13 @@
 }
 
 .chart-legend { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: #64748b; }
+
+/* Shown in place of the legend when a chart has nothing measurable to plot */
+.chart-note {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11.5px; color: #94a3b8; line-height: 1.4;
+  i { font-size: 12px; flex-shrink: 0; }
+}
 .leg-box { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
 .leg-line { width: 18px; height: 2.5px; background: #0d6e6e; display: inline-block; border-radius: 2px; }
 
@@ -124,8 +133,11 @@
 .summary-date    { font-size: 13.5px; font-weight: 400; color: #64748b; margin-left: 4px; }
 
 .summary-grid {
-  display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px;
+  // auto-fit rather than a fixed 4: the Summary row has three cards and
+  // Payments has four, and both need to fill the width evenly.
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px;
   @media (max-width: 900px) { grid-template-columns: repeat(2, 1fr); }
+  @media (max-width: 460px) { grid-template-columns: 1fr; }
 }
 
 .sum-card {
@@ -162,11 +174,14 @@
 .dept-stat { font-size: 12px; color: #64748b; white-space: nowrap; }
 
 .report-footer {
-  display: flex; align-items: center; gap: 8px;
+  // `align-items: flex-start` + a block child: previously the inline <strong>
+  // tags became flex items and the sentence broke into scattered columns.
+  display: flex; align-items: flex-start; gap: 8px;
   padding: 14px 18px; border-radius: 10px;
   background: #f0fdfa; border: 1px solid #ccfbf1;
-  font-size: 13px; color: #0d6e6e;
-  i { font-size: 14px; flex-shrink: 0; }
+  font-size: 12.5px; line-height: 1.6; color: #0d6e6e;
+  i { font-size: 14px; flex-shrink: 0; margin-top: 2px; }
+  p { margin: 0; }
 }
 
 @media print {
@@ -206,4 +221,89 @@
   .btn-export span { display: none; }
   .btn-export { padding: 9px; }
   .header-right { gap: 6px; }
+}
+
+/* ── Revenue chart ─────────────────────────────────────────────── */
+// Currency labels need more room than the plain counts on other charts.
+.bar-y--money { width: 46px; }
+.bar-fill--money { background: #16a34a; }
+
+/* ── Payments by patient ───────────────────────────────────────── */
+.payer-table-wrap { overflow-x: auto; }
+
+.payer-table {
+  width: 100%; border-collapse: collapse; font-size: 12.5px;
+
+  th {
+    text-align: left; padding: 0 10px 9px; white-space: nowrap;
+    font-size: 10px; font-weight: 700; letter-spacing: .6px;
+    color: #94a3b8; text-transform: uppercase;
+    border-bottom: 1px solid #e2e8f0;
+  }
+  td {
+    padding: 10px; color: #334155; border-bottom: 1px solid #f1f5f9;
+    vertical-align: middle;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover td { background: #f8fafc; }
+}
+
+.pt-rank {
+  width: 34px; color: #94a3b8; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.pt-name   { font-weight: 600; color: #0f172a; }
+.pt-id     { color: #64748b; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pt-method { color: #64748b; white-space: nowrap; }
+.pt-count  { text-align: center; font-variant-numeric: tabular-nums; }
+.pt-amt {
+  text-align: right; white-space: nowrap;
+  font-weight: 700; color: #0f172a; font-variant-numeric: tabular-nums;
+}
+.pt-bar { width: 130px; min-width: 90px; }
+.pt-track {
+  height: 7px; border-radius: 4px; background: #f1f5f9; overflow: hidden;
+}
+.pt-fill {
+  height: 100%; border-radius: 4px;
+  background: linear-gradient(90deg, #0d6e6e, #16a34a);
+}
+
+@media (max-width: 780px) {
+  .pt-method, .pt-bar { display: none; }
+}
+
+/* ── Visit funnel ──────────────────────────────────────────────── */
+// Checked in -> Paid -> Consulted. Without this the counts look like they
+// contradict each other, because payment happens before the consultation.
+.funnel {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 14px 18px; border-radius: 12px;
+  background: #f8fafc; border: 1px solid #e2e8f0;
+}
+.funnel-step {
+  display: flex; align-items: baseline; gap: 7px;
+}
+.funnel-num {
+  font-size: 20px; font-weight: 800; color: #0f172a;
+  font-variant-numeric: tabular-nums; line-height: 1;
+}
+.funnel-lbl {
+  font-size: 11.5px; font-weight: 600; color: #64748b;
+  text-transform: uppercase; letter-spacing: .5px;
+}
+.funnel-arrow { font-size: 11px; color: #cbd5e1; }
+.funnel-flag {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 11px; border-radius: 999px;
+  background: #fffbeb; border: 1px solid #fde68a; color: #b45309;
+  font-size: 11.5px; font-weight: 700;
+  i { font-size: 11px; }
+}
+.funnel-note {
+  flex: 1; min-width: 240px; margin: 0; text-align: right;
+  font-size: 11.5px; color: #94a3b8; line-height: 1.5;
+}
+
+@media (max-width: 760px) {
+  .funnel-note { text-align: left; flex-basis: 100%; }
 }

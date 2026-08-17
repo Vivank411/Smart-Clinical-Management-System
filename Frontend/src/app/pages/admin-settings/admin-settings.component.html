@@ -142,6 +142,87 @@
           </button>
         </div>
 
+      } @else if (activeSection === 'payments') {
+        <div class="section-head">
+          <h2>Payment Settings</h2>
+          <p>The QR shown to patients at the counter when they pay by UPI.</p>
+        </div>
+
+        @if (qrLoading) {
+          <div class="qr-loading"><i class="pi pi-spin pi-spinner"></i> Loading…</div>
+        } @else {
+
+          <div class="qr-fee-strip">
+            <div>
+              <span class="qr-fee-label">Consultation fee</span>
+              <span class="qr-fee-value">{{ feeLabel }}</span>
+            </div>
+            <p class="qr-fee-note">
+              Same for every patient. Change it with <code>CONSULTATION_FEE</code> in the
+              backend <code>.env</code>, then restart the API.
+            </p>
+          </div>
+
+          <div class="qr-upload-row">
+            <div class="qr-preview-box">
+              @if (qrPreview) {
+                <img [src]="qrPreview" alt="Payment QR preview" class="qr-preview-img"/>
+              } @else {
+                <div class="qr-empty">
+                  <i class="pi pi-qrcode"></i>
+                  <span>No QR uploaded</span>
+                </div>
+              }
+            </div>
+
+            <div class="qr-upload-side">
+              <label class="qr-pick-btn">
+                <i class="pi pi-upload"></i>
+                {{ qrPreview ? 'Replace Image' : 'Upload QR Image' }}
+                <input type="file" accept="image/png,image/jpeg,image/webp"
+                       (change)="onQrSelected($event)" hidden/>
+              </label>
+              <p class="qr-pick-hint">
+                Take a screenshot of your UPI QR from GPay, PhonePe, Paytm or your bank
+                app and upload it here. PNG, JPG or WebP, under 1.5&nbsp;MB.
+              </p>
+
+              <div class="field">
+                <label>Label shown under the QR <span class="opt">(optional)</span></label>
+                <input type="text" [(ngModel)]="qrLabel" maxlength="120"
+                       placeholder="e.g. MediClinic — yourupi&#64;okhdfcbank"/>
+              </div>
+
+              @if (qrError) {
+                <p class="qr-error"><i class="pi pi-exclamation-circle"></i> {{ qrError }}</p>
+              }
+              @if (qrSaved) {
+                <p class="qr-ok"><i class="pi pi-check-circle"></i> Saved. Receptionists will see it immediately.</p>
+              }
+
+              <div class="qr-actions">
+                @if (paymentConfig?.qrConfigured) {
+                  <button class="btn-cancel" (click)="removeQr()" [disabled]="qrSaving">
+                    <i class="pi pi-trash"></i> Remove
+                  </button>
+                }
+                <button class="btn-save" (click)="saveQr()" [disabled]="qrSaving || !qrPreview">
+                  @if (qrSaving) { <i class="pi pi-spin pi-spinner"></i> } Save QR
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="qr-warn-note">
+            <i class="pi pi-exclamation-triangle"></i>
+            <div>
+              <strong>Check the QR before saving.</strong>
+              <span>Whatever you upload is what every patient scans. Upload the wrong
+              image and payments go to the wrong account — scan it yourself once to be sure.</span>
+            </div>
+          </div>
+        }
+
       } @else if (activeSection === 'notifications') {
         <div class="section-head">
           <h2>Notification Settings</h2>

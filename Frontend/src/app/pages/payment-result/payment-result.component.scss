@@ -1,0 +1,115 @@
+.pr-page { padding: 30px 26px 50px; max-width: 620px; margin: 0 auto; }
+
+.pr-loading {
+  display: flex; align-items: center; justify-content: center; gap: 9px;
+  padding: 80px 20px; color: #64748b; font-size: 14px;
+}
+
+.pr-card {
+  background: #fff; border: 1px solid #e2e8f0; border-radius: 16px;
+  padding: 34px 30px; text-align: center;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, .05);
+  &--ok   { border-top: 4px solid #16a34a; }
+  &--fail { border-top: 4px solid #dc2626; }
+}
+
+/* ── Status badge ── */
+.pr-icon {
+  width: 62px; height: 62px; border-radius: 50%; margin: 0 auto 18px;
+  display: flex; align-items: center; justify-content: center; font-size: 26px;
+  &--ok   { background: #dcfce7; color: #16a34a; }
+  &--fail { background: #fee2e2; color: #dc2626; }
+  &--wait { background: #fef3c7; color: #b45309; }
+}
+
+.pr-title { margin: 0 0 8px; font-size: 21px; font-weight: 700; color: #0f172a; }
+.pr-msg {
+  margin: 0 auto; max-width: 440px; font-size: 13.5px; color: #475569; line-height: 1.6;
+  &--sub { margin-top: 12px; font-size: 12.5px; color: #94a3b8; }
+}
+
+/* ── The token — the whole point of the screen ── */
+.pr-token {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  margin: 24px auto; padding: 22px 30px; max-width: 300px;
+  background: linear-gradient(135deg, #0d6e6e, #0f8b82);
+  border-radius: 14px; color: #fff;
+  box-shadow: 0 8px 22px rgba(13, 110, 110, .28);
+}
+.pr-token-label {
+  font-size: 11px; font-weight: 600; letter-spacing: 1.4px;
+  text-transform: uppercase; color: #99f6e4;
+}
+.pr-token-value {
+  font-size: 40px; font-weight: 800; letter-spacing: 3px; line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.pr-token-note { font-size: 11.5px; color: #ccfbf1; }
+
+/* ── Receipt lines ── */
+.pr-receipt {
+  margin-top: 22px; padding-top: 18px; border-top: 1px dashed #e2e8f0;
+  display: flex; flex-direction: column; gap: 9px; text-align: left;
+}
+.pr-rec-row {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 14px;
+  font-size: 12.5px;
+  span   { color: #94a3b8; flex-shrink: 0; }
+  strong { color: #0f172a; font-weight: 600; text-align: right; overflow-wrap: anywhere; }
+}
+
+.pr-reason {
+  display: flex; align-items: flex-start; gap: 8px; text-align: left;
+  margin: 18px auto 0; max-width: 440px; padding: 12px 15px; border-radius: 10px;
+  background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c;
+  font-size: 12.5px; line-height: 1.55;
+  i { font-size: 13px; margin-top: 2px; flex-shrink: 0; }
+}
+
+/* ── Demo-mode panel ── */
+.pr-demo {
+  margin-top: 22px; padding: 16px 18px; text-align: left;
+  background: #fffbeb; border: 1px solid #fde68a; border-radius: 12px;
+}
+.pr-demo-head {
+  display: flex; align-items: center; gap: 7px;
+  margin: 0 0 6px; font-size: 12.5px; font-weight: 700; color: #92400e;
+  i { font-size: 13px; }
+}
+.pr-demo-body {
+  margin: 0 0 14px; font-size: 12px; color: #92400e; line-height: 1.6;
+  code {
+    background: #fef3c7; border-radius: 4px; padding: 1px 5px;
+    font-size: 11.5px; font-family: ui-monospace, Menlo, Consolas, monospace;
+  }
+}
+.pr-demo-actions { display: flex; flex-direction: column; gap: 8px; }
+
+/* ── Buttons ── */
+.pr-actions { display: flex; justify-content: center; gap: 10px; margin-top: 26px; flex-wrap: wrap; }
+.pr-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  border-radius: 10px; padding: 11px 20px;
+  font-size: 13.5px; font-weight: 600; cursor: pointer;
+  border: 1.5px solid transparent; transition: all .15s;
+  i { font-size: 13px; }
+  &--ghost   { background: #fff; border-color: #e2e8f0; color: #475569;
+               &:hover:not(:disabled) { background: #f8fafc; } }
+  &--primary { background: #0d6e6e; color: #fff;
+               &:hover:not(:disabled) { background: #0b5c5c; } }
+  &--ok      { background: #16a34a; color: #fff;
+               &:hover:not(:disabled) { background: #15803d; } }
+  &:disabled { opacity: .65; cursor: not-allowed; }
+}
+
+@media print {
+  .no-print { display: none !important; }
+  .pr-card  { border: none; box-shadow: none; }
+}
+
+@media (max-width: 560px) {
+  .pr-page        { padding: 18px 14px 34px; }
+  .pr-card        { padding: 26px 20px; }
+  .pr-token-value { font-size: 34px; }
+  .pr-actions     { flex-direction: column-reverse; .pr-btn { width: 100%; } }
+}

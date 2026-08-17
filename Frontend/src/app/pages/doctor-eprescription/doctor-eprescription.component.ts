@@ -259,21 +259,90 @@ export class DoctorEprescriptionComponent implements OnInit {
       doctorName: this.auth.getUser()?.name,
       notes: this.rxNotes
     }).subscribe({
-      next: () => {
+      next: (rx) => {
         this.isSaving = false;
         this.savedSuccess = true;
-        // Backend sets status=Completed; after 1.5s clear selection + refresh list
-        setTimeout(() => {
-          this.selectedPatient = null;
-          this.showPreview = false;
-          this.savedSuccess = false;
-          this.rows = [];
-          this.rxNotes = '';
-          this.loadPatients();
-        }, 1500);
+        // Offer delivery before clearing — once the patient is deselected the
+        // prescription is no longer on screen to send.
+        this.openSendDialog(rx.id);
       },
       error: () => { this.isSaving = false; }
     });
+  }
+
+  // ── Delivery to the patient ────────────────────────────────────────────────
+
+  showSendDialog = false;
+  savedRxId: number | null = null;
+  sendEmail = '';
+  sendMobile = '';
+  sendingChannel: 'email' | 'whatsapp' | null = null;
+  sendResult: { ok: boolean; text: string } | null = null;
+  emailedAt: string | null = null;
+  whatsappedAt: string | null = null;
+
+  private openSendDialog(rxId: number) {
+    this.savedRxId      = rxId;
+    this.sendEmail      = this.selectedPatient?.email ?? '';
+    this.sendMobile     = this.selectedPatient?.mobileNumber ?? '';
+    this.sendResult     = null;
+    this.sendingChannel = null;
+    this.emailedAt      = null;
+    this.whatsappedAt   = null;
+    this.showSendDialog = true;
+  }
+
+  get sendEmailInvalid(): boolean {
+    const v = this.sendEmail.trim();
+    return !v || !/^[^@\s]+@[^@\s.]+(\.[^@\s.]+)+$/.test(v);
+  }
+
+  get sendMobileInvalid(): boolean {
+    return this.sendMobile.replace(/\D/g, '').length < 10;
+  }
+
+  sendVia(channel: 'email' | 'whatsapp') {
+    if (this.savedRxId == null || this.sendingChannel) return;
+    if (channel === 'email'    && this.sendEmailInvalid)  return;
+    if (channel === 'whatsapp' && this.sendMobileInvalid) return;
+
+    this.sendingChannel = channel;
+    this.sendResult     = null;
+
+    this.api.sendPrescription(this.savedRxId, {
+      channel,
+      ...(channel === 'email'
+        ? { email: this.sendEmail.trim() }
+        : { mobile: this.sendMobile.trim() }),
+    }).subscribe({
+      next: (res) => {
+        this.sendingChannel = null;
+        this.sendResult = { ok: res.sent, text: res.message };
+        if (res.sent && channel === 'email')    this.emailedAt    = new Date().toLocaleTimeString();
+        if (res.sent && channel === 'whatsapp') this.whatsappedAt = new Date().toLocaleTimeString();
+        // WhatsApp is handed off to the app/web client with the text pre-filled.
+        if (res.whatsappUrl) window.open(res.whatsappUrl, '_blank', 'noopener');
+      },
+      error: (err) => {
+        this.sendingChannel = null;
+        this.sendResult = {
+          ok: false,
+          text: err.error?.detail ?? 'Could not send the prescription. Please try again.',
+        };
+      },
+    });
+  }
+
+  /** Close the delivery step and return to the patient list. */
+  finishAfterSave() {
+    this.showSendDialog = false;
+    this.savedRxId      = null;
+    this.selectedPatient = null;
+    this.showPreview    = false;
+    this.savedSuccess   = false;
+    this.rows           = [];
+    this.rxNotes        = '';
+    this.loadPatients();
   }
 
   printPrescription() { window.print(); }

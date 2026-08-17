@@ -134,18 +134,28 @@ def test_update_not_found_404(client):
     assert client.put("/patients/9999", json={"city": "Pune"}).status_code == 404
 
 
-def test_checkin_generates_token(client, make_patient):
+def test_checkin_records_time_but_no_token(client, make_patient):
+    """
+    The token is issued when the fee is paid, which happens after check-in —
+    see test_payments.py. Check-in on its own must not hand one out.
+    """
     p = make_patient()
     b = client.put(f"/patients/{p.id}", json={"status": "Checked-In", "doctor": "Dr. Rajesh Sharma"}).json()
-    assert b["status"] == "Checked-In" and b["queueToken"] == "Q-001" and b["checkinTime"]
+    assert b["status"] == "Checked-In" and b["checkinTime"]
+    assert b["queueToken"] is None
 
 
-def test_checkin_token_increments(client, make_patient):
-    p1 = make_patient(name="Pat One", mobile="9111111111")
-    p2 = make_patient(name="Pat Two", mobile="9222222222")
-    t1 = client.put(f"/patients/{p1.id}", json={"status": "Checked-In", "doctor": "Dr. A"}).json()["queueToken"]
-    t2 = client.put(f"/patients/{p2.id}", json={"status": "Checked-In", "doctor": "Dr. A"}).json()["queueToken"]
-    assert t1 == "Q-001" and t2 == "Q-002"
+def test_checkin_marks_the_fee_outstanding(client, db, make_patient):
+    p = make_patient(payment_status=None)
+    assert client.put(f"/patients/{p.id}",
+                      json={"status": "Checked-In", "doctor": "Dr. A"}).json()["paymentStatus"] == "Pending"
+
+
+def test_checkin_does_not_reset_a_settled_fee(client, make_patient):
+    """A patient who already paid must not be flipped back to Pending."""
+    p = make_patient(payment_status="Paid")
+    assert client.put(f"/patients/{p.id}",
+                      json={"status": "Checked-In", "doctor": "Dr. A"}).json()["paymentStatus"] == "Paid"
 
 
 def test_checkin_audit_logged(client, make_patient, db):
@@ -154,3 +164,74 @@ def test_checkin_audit_logged(client, make_patient, db):
     client.put(f"/patients/{p.id}", json={"status": "Checked-In", "doctor": "Dr. A"})
     logs = db.query(models.AuditLog).filter(models.AuditLog.module == "Queue").all()
     assert len(logs) == 1 and logs[0].action == "Patient Checked In"
+
+
+# ── Patient email (optional at registration) ─────────────────────────────────
+
+def test_register_with_email(client):
+    b = client.post("/patients", json=valid_patient_payload(email="Pat.Doe@Example.com "))
+    assert b.status_code == 201 and b.json()["email"] == "pat.doe@example.com"
+
+
+def test_register_without_email_ok(client):
+    """Email must never block a registration — it is not a mandatory field."""
+    r = client.post("/patients", json=valid_patient_payload())
+    assert r.status_code == 201 and r.json()["email"] is None
+
+
+def test_register_blank_email_treated_as_absent(client):
+    r = client.post("/patients", json=valid_patient_payload(email="   "))
+    assert r.status_code == 201 and r.json()["email"] is None
+
+
+def test_register_malformed_email_422(client):
+    assert client.post("/patients", json=valid_patient_payload(email="not-an-email")).status_code == 422
+
+
+def test_update_patient_email(client, make_patient):
+    p = make_patient()
+    assert client.put(f"/patients/{p.id}", json={"email": "new@clinic.com"}).json()["email"] == "new@clinic.com"
+
+
+# ── Mobile number is exactly 10 digits ───────────────────────────────────────
+
+def test_register_short_mobile_422(client):
+    assert client.post("/patients", json=valid_patient_payload(mobileNumber="98765")).status_code == 422
+
+
+def test_register_long_mobile_422(client):
+    assert client.post("/patients", json=valid_patient_payload(mobileNumber="98765432101")).status_code == 422
+
+
+def test_register_non_numeric_mobile_422(client):
+    assert client.post("/patients", json=valid_patient_payload(mobileNumber="98765abcde")).status_code == 422
+
+
+# ── Check-in timestamps ──────────────────────────────────────────────────────
+
+def test_checkin_stamps_iso_timestamp(client, make_patient, db):
+    import models, time_utils
+    p = make_patient()
+    client.put(f"/patients/{p.id}", json={"status": "Checked-In", "doctor": "Dr. A"})
+    db.expire_all()
+    stored = db.query(models.Patient).filter(models.Patient.id == p.id).first()
+
+    recorded = time_utils.parse(stored.checkin_at)
+    assert recorded is not None
+    assert abs((time_utils.now() - recorded).total_seconds()) < 60
+    # The display label stays in step with the timestamp behind it.
+    assert stored.checkin_time == time_utils.fmt_clock(recorded)
+
+
+def test_recheckin_refreshes_timestamp(client, make_patient, db):
+    """A returning patient's wait is measured from this visit, not the first."""
+    import models, time_utils
+    from datetime import timedelta
+    p = make_patient()
+    p.checkin_at = (time_utils.now() - timedelta(days=4)).isoformat(timespec="seconds")
+    db.commit()
+
+    client.put(f"/patients/{p.id}", json={"status": "Checked-In", "doctor": "Dr. A"})
+    db.expire_all()
+    refreshed = time_utils.parse(db.query(models.Patient).filter(models.Patient.id == p.id).first().checkin_at)
+    assert refreshed.date() == time_utils.today()

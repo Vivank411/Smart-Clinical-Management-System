@@ -28,13 +28,49 @@ export class AdminAuditComponent implements OnInit {
     'Queue', 'Reports & Analytics', 'System Settings', 'User Management',
   ];
   readonly actions = [
-    'Consultation Added', 'Data Exported', 'Doctor Added', 'Doctor Updated',
-    'Failed Login', 'Login', 'Password Reset', 'Patient Check-in',
-    'Patient Registered', 'Prescription Added', 'Record Deleted',
-    'Report Generated', 'Settings Updated', 'User Created', 'User Disabled',
+    'Consultation Added', 'Data Exported', 'Doctor Added', 'Doctor Deleted',
+    'Doctor Disabled', 'Doctor Enabled', 'Doctor Updated', 'Failed Login',
+    'Login', 'Password Changed', 'Patient Check-in', 'Patient Registered',
+    'Patient Updated', 'Prescription Added', 'Prescription Sent',
+    'User Created', 'User Deleted', 'User Disabled', 'User Enabled', 'User Updated',
   ];
 
   constructor(private api: ApiService) {}
+
+  /**
+   * Audit timestamps are stored as ISO-8601 with the clinic's UTC offset, so
+   * they render at the wall-clock time the action actually happened. Rows
+   * written before that change carry a pre-formatted string; those are shown
+   * as-is rather than misparsed into a wrong time.
+   */
+  private parsed(raw: string): Date | null {
+    if (!raw) return null;
+    const d = new Date(raw);
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  logDate(raw: string): string {
+    const d = this.parsed(raw);
+    if (!d) return raw.split(' ').slice(0, 3).join(' ');
+    return d.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
+  }
+
+  logTime(raw: string): string {
+    const d = this.parsed(raw);
+    if (!d) return raw.split(' ').slice(3).join(' ');
+    return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+  }
+
+  /** Window covered by the logs currently on screen. */
+  get rangeLabel(): string {
+    const stamps = this.logs.map(l => this.parsed(l.time)).filter((d): d is Date => !!d);
+    if (!stamps.length) return '—';
+    const fmt = (d: Date) =>
+      d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    const oldest = fmt(new Date(Math.min(...stamps.map(d => d.getTime()))));
+    const newest = fmt(new Date(Math.max(...stamps.map(d => d.getTime()))));
+    return oldest === newest ? oldest : `${oldest} – ${newest}`;
+  }
 
   ngOnInit(): void { this.load(); }
 

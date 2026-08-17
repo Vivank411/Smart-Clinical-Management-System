@@ -161,7 +161,9 @@ def test_val_extra_fields_ignored(client):
 
 
 def test_val_query_bounds(client):
-    assert client.get("/admin/patient-flow", params={"days": 6}).status_code == 422
+    # 1 day ("Today") is the floor; anything below or above the cap is rejected.
+    assert client.get("/admin/patient-flow", params={"days": 0}).status_code == 422
+    assert client.get("/admin/patient-flow", params={"days": 91}).status_code == 422
 
 
 def test_val_large_text(client, make_patient):

@@ -191,7 +191,7 @@
         } @else {
           @for (log of auditLogs; track $index) {
             <tr>
-              <td class="audit-time">{{ log.time }}</td>
+              <td class="audit-time">{{ logTime(log.time) }}</td>
               <td class="audit-user">
                 <div class="audit-user-cell">
                   <div class="audit-av">{{ log.user[0] }}</div>

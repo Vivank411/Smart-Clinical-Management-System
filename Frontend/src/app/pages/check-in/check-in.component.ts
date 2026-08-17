@@ -24,6 +24,8 @@ interface PatientRecord {
   dob:          string;
   lastVisit:    string;
   registeredOn: string;
+  /** 'Pending' blocks check-in until the registration fee is settled. */
+  paymentStatus?: string | null;
 }
 
 interface Doctor {
@@ -108,6 +110,15 @@ export class CheckInComponent implements OnInit {
     if (state?.patient) {
       this.selectedPatient = state.patient;
       this.patientSearch   = state.patient;
+      // The handed-over record is a snapshot; re-read it so the payment gate
+      // reflects what the server currently holds.
+      this.api.getPatient(state.patient.numericId).subscribe({
+        next: (p) => {
+          this.selectedPatient = this.mapApiPatient(p);
+          this.patientSearch   = this.selectedPatient;
+        },
+        error: () => { /* keep the handed-over snapshot */ },
+      });
     }
   }
 
@@ -127,8 +138,19 @@ export class CheckInComponent implements OnInit {
                     ? new Date(p.dob).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
                     : '—',
       lastVisit:    '—',
-      registeredOn: '—'
+      registeredOn: '—',
+      paymentStatus: p.paymentStatus,
     };
+  }
+
+  /** Registration fee still outstanding — check-in is blocked until it clears. */
+  get paymentPending(): boolean {
+    return this.selectedPatient?.paymentStatus === 'Pending';
+  }
+
+  goToPayment() {
+    if (!this.selectedPatient) return;
+    this.router.navigate(['/payment', this.selectedPatient.numericId]);
   }
 
   /* ── Autocomplete ── */
@@ -262,9 +284,11 @@ export class CheckInComponent implements OnInit {
     });
   }
 
-  onSuccessClose() {
+  /** Fee collection is the step after check-in; the token comes out of it. */
+  proceedToPayment() {
+    if (!this.selectedPatient) return;
     this.showSuccess = false;
-    this.router.navigate(['/dashboard']);
+    this.router.navigate(['/payment', this.selectedPatient.numericId]);
   }
 
   cancel() {

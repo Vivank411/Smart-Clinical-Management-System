@@ -1,0 +1,88 @@
+<div class="pr-page">
+
+  @if (loading) {
+    <div class="pr-loading"><i class="pi pi-spin pi-spinner"></i> Loading receipt…</div>
+
+  } @else if (!payment) {
+    <div class="pr-card pr-card--fail">
+      <div class="pr-icon pr-icon--fail"><i class="pi pi-times"></i></div>
+      <h1 class="pr-title">Payment not found</h1>
+      <p class="pr-msg">{{ errorMessage }}</p>
+      <div class="pr-actions">
+        <button class="pr-btn pr-btn--ghost" (click)="goToDashboard()">Back to Dashboard</button>
+      </div>
+    </div>
+
+  } @else if (succeeded) {
+    <!-- ── PAID: token issued ── -->
+    <div class="pr-card pr-card--ok">
+      <div class="pr-icon pr-icon--ok"><i class="pi pi-check"></i></div>
+      <h1 class="pr-title">Payment Received</h1>
+      <p class="pr-msg">
+        {{ amountLabel }} collected from <strong>{{ payment.patientName }}</strong>
+        ({{ payment.patientCode }}). The patient is now in the doctor's queue.
+      </p>
+
+      @if (payment.queueToken) {
+        <div class="pr-token">
+          <span class="pr-token-label">Queue Token</span>
+          <span class="pr-token-value">{{ payment.queueToken }}</span>
+          <span class="pr-token-note">Show this at the consultation desk</span>
+        </div>
+      }
+
+      <div class="pr-receipt">
+        <div class="pr-rec-row"><span>Receipt No.</span><strong>{{ payment.txnid }}</strong></div>
+        <div class="pr-rec-row"><span>Amount</span><strong>{{ amountLabel }}</strong></div>
+        <div class="pr-rec-row"><span>Method</span><strong>{{ methodLabel }}</strong></div>
+        @if (payment.cardLast4) {
+          <div class="pr-rec-row"><span>Card</span><strong>•••• {{ payment.cardLast4 }}</strong></div>
+        }
+        @if (payment.reference) {
+          <div class="pr-rec-row"><span>Reference</span><strong>{{ payment.reference }}</strong></div>
+        }
+        @if (payment.collectedBy) {
+          <div class="pr-rec-row"><span>Collected By</span><strong>{{ payment.collectedBy }}</strong></div>
+        }
+        @if (paidAtLabel) {
+          <div class="pr-rec-row"><span>Date</span><strong>{{ paidAtLabel }}</strong></div>
+        }
+        @if (payment.notes) {
+          <div class="pr-rec-row"><span>Note</span><strong>{{ payment.notes }}</strong></div>
+        }
+        <div class="pr-rec-row"><span>Purpose</span><strong>{{ payment.purpose }}</strong></div>
+      </div>
+
+      <div class="pr-actions no-print">
+        <button class="pr-btn pr-btn--ghost" (click)="print()">
+          <i class="pi pi-print"></i> Print Receipt
+        </button>
+        <button class="pr-btn pr-btn--primary" (click)="goToDashboard()">
+          <i class="pi pi-check-circle"></i> Done
+        </button>
+      </div>
+    </div>
+
+  } @else {
+    <!-- ── Not collected ── -->
+    <div class="pr-card">
+      <div class="pr-icon pr-icon--wait"><i class="pi pi-clock"></i></div>
+      <h1 class="pr-title">
+        {{ payment.status === 'Cancelled' ? 'Payment Cancelled' : 'Payment Not Collected' }}
+      </h1>
+      <p class="pr-msg">
+        {{ amountLabel }} for <strong>{{ payment.patientName }}</strong>
+        ({{ payment.patientCode }}) has not been collected.
+      </p>
+      <p class="pr-msg pr-msg--sub">
+        The patient stays checked in — no queue token is issued until the fee is settled.
+      </p>
+      <div class="pr-actions">
+        <button class="pr-btn pr-btn--ghost" (click)="goToDashboard()">Back to Dashboard</button>
+        <button class="pr-btn pr-btn--primary" (click)="retry()">
+          <i class="pi pi-refresh"></i> Collect Payment
+        </button>
+      </div>
+    </div>
+  }
+</div>

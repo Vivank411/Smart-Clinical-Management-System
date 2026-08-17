@@ -581,3 +581,97 @@
   &--ai   { background: #ede9fe; color: #6d28d9; }
 }
 
+
+/* ── Send Prescription to Patient ─────────────────────────────────────────── */
+.sp-overlay {
+  position: fixed; inset: 0; z-index: 2600;
+  background: rgba(15, 23, 42, .55); backdrop-filter: blur(2px);
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+}
+
+.sp-modal {
+  background: #fff; border-radius: 16px; width: min(560px, 100%);
+  max-height: 90vh; display: flex; flex-direction: column; overflow: hidden;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .3);
+}
+
+.sp-head {
+  display: flex; align-items: center; gap: 12px;
+  padding: 18px 22px; border-bottom: 1px solid #e2e8f0;
+}
+.sp-head-icon {
+  width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
+  background: #d1fae5; color: #059669;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px; font-weight: 700;
+}
+.sp-title { margin: 0; font-size: 17px; font-weight: 700; color: #0f172a; }
+.sp-sub   { margin: 2px 0 0; font-size: 12.5px; color: #64748b; }
+
+.sp-body { padding: 18px 22px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
+
+.sp-channel {
+  border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px 16px; background: #fafafa;
+}
+.sp-channel-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.sp-channel-icon {
+  width: 30px; height: 30px; border-radius: 8px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center; font-size: 14px;
+  &--mail { background: #dbeafe; color: #2563eb; }
+  &--wa   { background: #dcfce7; color: #16a34a; }
+}
+.sp-channel-label { flex: 1; min-width: 0; }
+.sp-channel-name { margin: 0; font-size: 13.5px; font-weight: 700; color: #0f172a; }
+.sp-channel-note { margin: 1px 0 0; font-size: 11.5px; color: #64748b; }
+
+.sp-done {
+  display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0;
+  padding: 3px 9px; border-radius: 999px; background: #dcfce7; color: #15803d;
+  font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .3px;
+  i { font-size: 10px; }
+}
+
+.sp-row { display: flex; gap: 8px; }
+
+.sp-input {
+  flex: 1; min-width: 0;
+  border: 1.5px solid #cbd5e1; border-radius: 9px;
+  padding: 9px 12px; font-size: 13px; color: #0f172a; background: #fff;
+  &:focus { outline: none; border-color: #0d9488; box-shadow: 0 0 0 3px rgba(13, 148, 136, .12); }
+  &--bad  { border-color: #fca5a5; background: #fef2f2; }
+}
+
+.sp-btn {
+  display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;
+  border: none; border-radius: 9px; padding: 9px 15px;
+  font-size: 12.5px; font-weight: 600; color: #fff; cursor: pointer;
+  transition: background .15s;
+  i { font-size: 12px; }
+  &--mail { background: #2563eb; &:hover:not(:disabled) { background: #1d4ed8; } }
+  &--wa   { background: #16a34a; &:hover:not(:disabled) { background: #15803d; } }
+  &:disabled { background: #cbd5e1; cursor: not-allowed; }
+}
+
+.sp-result {
+  display: flex; align-items: flex-start; gap: 8px;
+  border-radius: 10px; padding: 11px 14px;
+  background: #f0fdf4; border: 1px solid #bbf7d0; color: #15803d;
+  font-size: 12.5px; line-height: 1.5;
+  i { font-size: 14px; margin-top: 1px; flex-shrink: 0; }
+  &--bad { background: #fffbeb; border-color: #fde68a; color: #b45309; }
+}
+
+.sp-actions {
+  display: flex; justify-content: flex-end;
+  padding: 14px 22px; border-top: 1px solid #e2e8f0; background: #fafafa;
+}
+.sp-skip {
+  background: #fff; border: 1.5px solid #e2e8f0; border-radius: 9px;
+  padding: 9px 20px; font-size: 13px; font-weight: 600; color: #475569; cursor: pointer;
+  &:hover { background: #f8fafc; }
+}
+
+@media (max-width: 560px) {
+  .sp-row { flex-direction: column; }
+  .sp-btn { justify-content: center; }
+}

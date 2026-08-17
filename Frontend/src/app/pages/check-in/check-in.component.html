@@ -93,6 +93,20 @@
             <div class="spc-tick"><i class="pi pi-check"></i></div>
             <button class="spc-remove" (click)="clearPatient()"><i class="pi pi-times"></i></button>
           </div>
+
+          @if (paymentPending) {
+            <div class="unpaid-banner">
+              <i class="pi pi-indian-rupee unpaid-icon"></i>
+              <div class="unpaid-text">
+                <strong>Consultation fee outstanding</strong>
+                <span>This patient checked in earlier but hasn't paid, so no queue
+                token was issued.</span>
+              </div>
+              <button class="unpaid-btn" (click)="goToPayment()">
+                <i class="pi pi-arrow-right"></i> Collect Payment
+              </button>
+            </div>
+          }
         }
       </div>
 
@@ -337,11 +351,14 @@
     <div class="success-tick"><i class="pi pi-check"></i></div>
     <h2 class="success-title">Check-In Successful!</h2>
     <p class="success-sub">{{ selectedPatient?.name }}</p>
-    <div class="token-box">
-      <span class="token-label">Queue Token</span>
-      <span class="token-value">{{ queueToken }}</span>
+    <p class="success-msg">
+      One step left — collect the consultation fee. The queue token is issued
+      as soon as the payment is confirmed.
+    </p>
+    <div class="ci-success-actions">
+      <button class="btn-done" (click)="proceedToPayment()">
+        <i class="pi pi-indian-rupee"></i> Proceed to Payment
+      </button>
     </div>
-    <p class="success-msg">Patient has been added to the doctor's queue.</p>
-    <button class="btn-done" (click)="onSuccessClose()">Done</button>
   </div>
 </p-dialog>
