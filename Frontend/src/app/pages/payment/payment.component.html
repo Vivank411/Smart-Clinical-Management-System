@@ -1,0 +1,214 @@
+<div class="pay-page">
+
+  <header class="pay-header">
+    <div>
+      <h1 class="pay-title">Collect Consultation Fee</h1>
+      <p class="pay-sub">The queue token is issued as soon as the payment is confirmed</p>
+    </div>
+    <div class="pay-steps">
+      <span class="step step--done"><i class="pi pi-check"></i> Registered</span>
+      <span class="step-line"></span>
+      <span class="step step--done"><i class="pi pi-check"></i> Checked In</span>
+      <span class="step-line"></span>
+      <span class="step step--active">Payment</span>
+      <span class="step-line"></span>
+      <span class="step">Token</span>
+    </div>
+  </header>
+
+  @if (loading) {
+    <div class="pay-loading"><i class="pi pi-spin pi-spinner"></i> Loading payment details…</div>
+
+  } @else if (!patient) {
+    <div class="pay-error-card">
+      <i class="pi pi-exclamation-triangle"></i>
+      <p>{{ errorMessage || 'Patient not found.' }}</p>
+      <button class="pay-btn pay-btn--ghost" (click)="cancel()">Back to Dashboard</button>
+    </div>
+
+  } @else {
+    <div class="pay-body">
+
+      <!-- Who is paying, and how much -->
+      <section class="pay-card">
+        <div class="pay-patient">
+          <div class="pay-avatar">{{ initials }}</div>
+          <div class="pay-patient-info">
+            <p class="pay-patient-name">{{ patient.name }}</p>
+            <p class="pay-patient-meta">
+              {{ patient.patientId }} · {{ patient.age }}Y / {{ patient.gender }}
+              @if (patient.queueToken) { · Token {{ patient.queueToken }} }
+            </p>
+          </div>
+          <div class="pay-amount-block">
+            <span class="pay-amount-label">Amount due</span>
+            <span class="pay-amount">{{ amountLabel }}</span>
+          </div>
+        </div>
+
+        @if (alreadyPaid) {
+          <div class="pay-paid-note">
+            <i class="pi pi-check-circle"></i>
+            This patient has already paid. Collecting again will record a second payment.
+          </div>
+        }
+      </section>
+
+      @if (errorMessage) {
+        <div class="pay-error-bar"><i class="pi pi-exclamation-circle"></i> {{ errorMessage }}</div>
+      }
+
+      <!-- ── Method picker ── -->
+      @if (!method) {
+        <section class="pay-card">
+          <h2 class="pay-card-title"><i class="pi pi-wallet"></i> How is the patient paying?</h2>
+
+          <div class="method-grid">
+            <button class="method" (click)="choose('qr')" [disabled]="busy">
+              <span class="method-icon method-icon--upi"><i class="pi pi-qrcode"></i></span>
+              <span class="method-name">Scan QR</span>
+              <span class="method-note">Patient scans the clinic's UPI QR with any UPI app.</span>
+            </button>
+
+            <button class="method" (click)="choose('card')" [disabled]="busy">
+              <span class="method-icon method-icon--card"><i class="pi pi-credit-card"></i></span>
+              <span class="method-name">Credit / Debit Card</span>
+              <span class="method-note">Taken on the clinic's card machine and recorded here.</span>
+            </button>
+
+            <button class="method" (click)="choose('cash')" [disabled]="busy">
+              <span class="method-icon method-icon--cash"><i class="pi pi-indian-rupee"></i></span>
+              <span class="method-name">Cash</span>
+              <span class="method-note">Collected at the counter, recorded against your name.</span>
+            </button>
+          </div>
+
+          <div class="pay-actions">
+            <button class="pay-btn pay-btn--ghost" (click)="cancel()">Pay Later</button>
+          </div>
+        </section>
+      }
+
+      <!-- ── QR ── -->
+      @if (method === 'qr') {
+        <section class="pay-card pay-card--center">
+          <h2 class="pay-card-title pay-card-title--center">
+            <i class="pi pi-qrcode"></i> Scan to Pay {{ amountLabel }}
+          </h2>
+
+          @if (qrBroken) {
+            <div class="qr-missing">
+              <i class="pi pi-exclamation-triangle"></i>
+              <div>
+                <strong>No payment QR is set up</strong>
+                <span>Upload one under Settings → Payment Settings, or take cash or card instead.</span>
+              </div>
+            </div>
+          } @else {
+            <div class="qr-frame">
+              <img [src]="qrSrc" alt="Clinic payment QR code" class="qr-img"
+                   (error)="onQrLoadError()"/>
+            </div>
+            <p class="qr-label">{{ qrCaption }}</p>
+          }
+
+          <p class="qr-hint">
+            Ask the patient to scan with any UPI app and pay <strong>{{ amountLabel }}</strong>.
+            Confirm below once you can see the money has arrived.
+          </p>
+
+          <ng-container *ngTemplateOutlet="confirmForm"></ng-container>
+        </section>
+      }
+
+      <!-- ── Card ── -->
+      @if (method === 'card') {
+        <section class="pay-card pay-card--center">
+          <h2 class="pay-card-title pay-card-title--center">
+            <i class="pi pi-credit-card"></i> Card Payment
+          </h2>
+
+          <div class="tender-amount">{{ amountLabel }}</div>
+          <p class="tender-hint">
+            Charge <strong>{{ amountLabel }}</strong> on the clinic's card machine, then confirm here.
+          </p>
+
+          <div class="card-safety">
+            <i class="pi pi-lock"></i>
+            <span>
+              Never type the card number, expiry or CVV into this system. Only the last
+              four digits and the machine's approval code are recorded — enough to match
+              the payment on your bank statement.
+            </span>
+          </div>
+
+          <ng-container *ngTemplateOutlet="confirmForm"></ng-container>
+        </section>
+      }
+
+      <!-- ── Cash ── -->
+      @if (method === 'cash') {
+        <section class="pay-card pay-card--center">
+          <h2 class="pay-card-title pay-card-title--center">
+            <i class="pi pi-indian-rupee"></i> Cash Payment
+          </h2>
+
+          <div class="tender-amount">{{ amountLabel }}</div>
+          <p class="tender-hint">
+            Confirm only once the cash is in hand. This is recorded against your name
+            and appears in the audit log.
+          </p>
+
+          <ng-container *ngTemplateOutlet="confirmForm"></ng-container>
+        </section>
+      }
+
+    </div>
+  }
+</div>
+
+<!-- ── Shared confirmation form ── -->
+<ng-template #confirmForm>
+  <div class="confirm-fields">
+    @if (method === 'card') {
+      <div class="cf-field cf-field--small">
+        <label>Card last 4 digits <span class="cf-opt">(optional)</span></label>
+        <input type="text" inputmode="numeric" maxlength="4" [(ngModel)]="cardLast4"
+               placeholder="1234" [class.cf-bad]="cardLast4Invalid"/>
+        @if (cardLast4Invalid) { <p class="cf-error">Enter exactly 4 digits, or leave blank.</p> }
+      </div>
+    }
+
+    @if (method !== 'cash') {
+      <div class="cf-field">
+        <label>{{ referenceLabel }} <span class="cf-opt">(optional)</span></label>
+        <input type="text" [(ngModel)]="reference" maxlength="60"
+               placeholder="e.g. 4198 7723 0011"
+               [class.cf-bad]="referenceLooksLikeACardNumber"/>
+        @if (referenceLooksLikeACardNumber) {
+          <p class="cf-error">
+            <i class="pi pi-exclamation-triangle"></i>
+            That looks like a full card number. Enter only the short approval or
+            reference code — card numbers must never be stored here.
+          </p>
+        }
+      </div>
+    }
+
+    <div class="cf-field">
+      <label>Note <span class="cf-opt">(optional)</span></label>
+      <input type="text" [(ngModel)]="notes" maxlength="300" placeholder="Anything worth recording"/>
+    </div>
+  </div>
+
+  <div class="pay-actions pay-actions--center">
+    <button class="pay-btn pay-btn--ghost" (click)="back()" [disabled]="busy">Back</button>
+    <button class="pay-btn pay-btn--primary" (click)="confirm()" [disabled]="!canConfirm">
+      @if (busy) {
+        <i class="pi pi-spin pi-spinner"></i> Recording…
+      } @else {
+        <i class="pi pi-check"></i> Payment Received — Issue Token
+      }
+    </button>
+  </div>
+</ng-template>

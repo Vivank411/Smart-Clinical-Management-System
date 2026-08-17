@@ -28,6 +28,16 @@ export const routes: Routes = [
         path: 'search-patient',
         loadComponent: () => import('./pages/search-patient/search-patient.component').then(m => m.SearchPatientComponent)
       },
+      // The literal path must stay ahead of the parameterised one, otherwise
+      // PayU's return trip to /payment/result is read as a patient id.
+      {
+        path: 'payment/result',
+        loadComponent: () => import('./pages/payment-result/payment-result.component').then(m => m.PaymentResultComponent)
+      },
+      {
+        path: 'payment/:patientId',
+        loadComponent: () => import('./pages/payment/payment.component').then(m => m.PaymentComponent)
+      },
       {
         path: 'check-in',
         loadComponent: () => import('./pages/check-in/check-in.component').then(m => m.CheckInComponent)

@@ -7,4 +7,11 @@ python-dotenv==1.0.1
 alembic==1.13.3
 passlib[bcrypt]==1.7.4
 anthropic==0.75.0
-requests==2.32.3
+# Unpinned lower bound: Amazon Linux ships an rpm-managed requests that pip
+# cannot uninstall, and yum/dnf depend on it. Any 2.25+ works for our use.
+requests>=2.25.1
+# PayU posts its result back as an HTML form; FastAPI needs this to read it.
+python-multipart==0.0.12
+# IANA timezone database — zoneinfo has no system tz data on Windows hosts,
+# and slim Linux images often omit it too.
+tzdata==2024.2

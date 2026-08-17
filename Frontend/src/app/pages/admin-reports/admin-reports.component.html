@@ -10,6 +10,7 @@
       <div class="date-range-wrap">
         <i class="pi pi-calendar"></i>
         <select class="range-sel" [(ngModel)]="selectedRange" (ngModelChange)="onRangeChange()">
+          <option value="1">Today</option>
           <option value="7">Last 7 Days</option>
           <option value="14">Last 14 Days</option>
           <option value="30">Last 30 Days</option>
@@ -34,16 +35,18 @@
   <!-- Top 4-Chart Grid -->
   <div class="charts-grid">
 
-    <!-- Daily Patient Count (bar chart) -->
+    <!-- Daily Consultations (bar chart) -->
     <div class="chart-card">
-      <div class="chart-title">Daily Patient Count</div>
+      <div class="chart-title">Daily Consultations
+        <span class="chart-sub">(Total {{ summary.totalConsultations }})</span>
+      </div>
       <div class="bar-chart-wrap">
         <div class="bar-y">
           @for (y of barYLabels; track y) { <span>{{ y }}</span> }
         </div>
         <div class="bar-bars">
           @for (d of patientFlow; track d.day) {
-            <div class="bar-col" [title]="d.day + ': ' + d.count + ' patient(s)'">
+            <div class="bar-col" [title]="d.day + ': ' + d.count + ' consultation(s)'">
               <span class="bar-tip">{{ d.count > 0 ? d.count : '' }}</span>
               <div class="bar-fill" [style.height.%]="barH(d.count)"></div>
             </div>
@@ -53,12 +56,14 @@
       <div class="chart-x-labels">
         @for (d of patientFlow; track d.day) { <span>{{ d.day }}</span> }
       </div>
-      <div class="chart-legend"><span class="leg-box" style="background:#0d6e6e"></span> Patients</div>
+      <div class="chart-legend"><span class="leg-box" style="background:#0d6e6e"></span> Consultations</div>
     </div>
 
     <!-- Average Waiting Time (line chart) -->
     <div class="chart-card">
-      <div class="chart-title">Average Waiting Time (mins)</div>
+      <div class="chart-title">Average Waiting Time (mins)
+        <span class="chart-sub">(Check-in → consultation)</span>
+      </div>
       <div class="line-chart-wrap">
         <div class="line-y">
           @for (y of waitingYLabels; track y) { <span>{{ y }}</span> }
@@ -78,12 +83,21 @@
       <div class="chart-x-labels">
         @for (d of waitingTime; track d.day) { <span>{{ d.day }}</span> }
       </div>
-      <div class="chart-legend"><span class="leg-line"></span> Mins</div>
+      @if (waitingUnmeasured) {
+        <div class="chart-note">
+          <i class="pi pi-info-circle"></i>
+          No completed check-in → consultation pair recorded in this period yet.
+        </div>
+      } @else {
+        <div class="chart-legend"><span class="leg-line"></span> Mins</div>
+      }
     </div>
 
     <!-- Consultation Statistics (donut) -->
     <div class="chart-card">
-      <div class="chart-title">Consultation Statistics</div>
+      <div class="chart-title">Consultation Statistics
+        <span class="chart-sub">(of {{ summary.totalConsultations }})</span>
+      </div>
       <div class="donut-wrap">
         <svg viewBox="0 0 120 120" width="110" height="110" class="donut-svg">
           <circle cx="60" cy="60" r="45" fill="none" stroke="#f1f5f9" stroke-width="18"/>
@@ -110,7 +124,7 @@
 
     <!-- Doctor Workload (horizontal bars) -->
     <div class="chart-card">
-      <div class="chart-title">Doctor Workload <span class="chart-sub">(Patients)</span></div>
+      <div class="chart-title">Doctor Workload <span class="chart-sub">(Consultations)</span></div>
       <div class="workload-list">
         @for (d of doctorWorkload; track d.name) {
           <div class="wl-row">
@@ -122,7 +136,7 @@
           </div>
         }
         @if (!doctorWorkload.length) {
-          <div class="empty-msg">No patients assigned yet</div>
+          <div class="empty-msg">No consultations in this period</div>
         }
       </div>
       <div class="workload-x">
@@ -139,21 +153,47 @@
   <!-- Summary Cards -->
   <div class="summary-section">
     <div class="summary-heading">Summary <span class="summary-date">({{ dateRangeLabel }})</span></div>
+
+    <!-- Visit funnel — spells out why these figures differ from each other.
+         Payment is taken at check-in, so more patients pay than get consulted. -->
+    <div class="funnel">
+      <div class="funnel-step">
+        <span class="funnel-num">{{ summary.patientsCheckedIn }}</span>
+        <span class="funnel-lbl">Checked in</span>
+      </div>
+      <i class="pi pi-arrow-right funnel-arrow"></i>
+      <div class="funnel-step">
+        <span class="funnel-num">{{ payments.payingPatients }}</span>
+        <span class="funnel-lbl">Paid</span>
+      </div>
+      <i class="pi pi-arrow-right funnel-arrow"></i>
+      <div class="funnel-step">
+        <span class="funnel-num">{{ summary.totalPatients }}</span>
+        <span class="funnel-lbl">Consulted</span>
+      </div>
+      @if (payments.outstandingVisits > 0) {
+        <span class="funnel-flag">
+          <i class="pi pi-exclamation-circle"></i>
+          {{ payments.outstandingVisits }} still to pay
+        </span>
+      }
+      <p class="funnel-note">
+        Patients pay at check-in and wait for the doctor, so these counts differ
+        while a visit is still in progress.
+      </p>
+    </div>
+
     <div class="summary-grid">
 
       <div class="sum-card">
         <div class="sum-ico" style="background:#eff6ff">
           <i class="pi pi-users" style="color:#3b82f6;font-size:20px"></i>
         </div>
-        <div class="sum-label">TOTAL PATIENTS</div>
+        <div class="sum-label">PATIENTS CONSULTED</div>
         <div class="sum-val">{{ summary.totalPatients }}</div>
         <div class="sum-trend" [ngClass]="trendClass(summary.patientsChange)">
           <i class="pi" [ngClass]="trendIcon(summary.patientsChange)"></i>
-          @if (summary.patientsChange !== 0) {
-            {{ summary.patientsChange | number:'1.1-1' }}% vs last week
-          } @else {
-            No change vs last week
-          }
+          {{ trendText(summary.patientsChange) }}
         </div>
       </div>
 
@@ -165,11 +205,7 @@
         <div class="sum-val">{{ summary.totalConsultations }}</div>
         <div class="sum-trend" [ngClass]="trendClass(summary.consultationsChange)">
           <i class="pi" [ngClass]="trendIcon(summary.consultationsChange)"></i>
-          @if (summary.consultationsChange !== 0) {
-            {{ summary.consultationsChange | number:'1.1-1' }}% vs last week
-          } @else {
-            No change vs last week
-          }
+          {{ trendText(summary.consultationsChange) }}
         </div>
       </div>
 
@@ -181,31 +217,175 @@
         <div class="sum-val">{{ summary.avgWaitingTime }} <span class="sum-unit">mins</span></div>
         <div class="sum-trend" [ngClass]="trendClass(summary.waitingTimeChange, true)">
           <i class="pi" [ngClass]="trendIcon(summary.waitingTimeChange, true)"></i>
-          @if (summary.waitingTimeChange !== 0) {
-            {{ summary.waitingTimeChange | number:'1.0-0' }} mins vs last week
-          } @else {
-            Stable vs last week
-          }
-        </div>
-      </div>
-
-      <div class="sum-card">
-        <div class="sum-ico" style="background:#fff1f2">
-          <i class="pi pi-times-circle" style="color:#e11d48;font-size:20px"></i>
-        </div>
-        <div class="sum-label">CANCELLED CONSULTATIONS</div>
-        <div class="sum-val">{{ summary.cancelledConsultations }}</div>
-        <div class="sum-trend" [ngClass]="trendClass(summary.cancelledChange, true)">
-          <i class="pi" [ngClass]="trendIcon(summary.cancelledChange, true)"></i>
-          @if (summary.cancelledChange !== 0) {
-            {{ summary.cancelledChange | number:'1.1-1' }}% vs last week
-          } @else {
-            No cancellations recorded
-          }
+          {{ trendText(summary.waitingTimeChange, 'mins') }}
         </div>
       </div>
 
     </div>
+  </div>
+
+  <!-- ── Payments & Revenue ── -->
+  <div class="summary-section">
+    <div class="summary-heading">
+      Payments &amp; Revenue <span class="summary-date">({{ dateRangeLabel }})</span>
+    </div>
+
+    <div class="summary-grid">
+      <div class="sum-card">
+        <div class="sum-ico" style="background:#f0fdf4">
+          <i class="pi pi-indian-rupee" style="color:#16a34a;font-size:20px"></i>
+        </div>
+        <div class="sum-label">TOTAL COLLECTED</div>
+        <div class="sum-val">{{ money(payments.totalCollected) }}</div>
+        <div class="sum-trend" [ngClass]="trendClass(payments.collectedChange)">
+          <i class="pi" [ngClass]="trendIcon(payments.collectedChange)"></i>
+          {{ trendText(payments.collectedChange) }}
+        </div>
+      </div>
+
+      <div class="sum-card">
+        <div class="sum-ico" style="background:#eff6ff">
+          <i class="pi pi-receipt" style="color:#3b82f6;font-size:20px"></i>
+        </div>
+        <div class="sum-label">TRANSACTIONS</div>
+        <div class="sum-val">{{ payments.transactionCount }}</div>
+        <div class="sum-trend trend-neutral">
+          <i class="pi pi-users"></i>
+          From {{ payments.payingPatients }} patient{{ payments.payingPatients === 1 ? '' : 's' }} who paid
+        </div>
+      </div>
+
+      <div class="sum-card">
+        <div class="sum-ico" style="background:#f0fdfa">
+          <i class="pi pi-chart-line" style="color:#0d9488;font-size:20px"></i>
+        </div>
+        <div class="sum-label">AVG PER PATIENT</div>
+        <div class="sum-val">{{ money(payments.averagePerPatient) }}</div>
+        <div class="sum-trend trend-neutral">
+          <i class="pi pi-minus"></i> Across paying patients
+        </div>
+      </div>
+
+      <div class="sum-card">
+        <div class="sum-ico" style="background:#fffbeb">
+          <i class="pi pi-exclamation-circle" style="color:#d97706;font-size:20px"></i>
+        </div>
+        <div class="sum-label">UNPAID VISITS</div>
+        <div class="sum-val">{{ payments.outstandingVisits }}</div>
+        <div class="sum-trend" [ngClass]="payments.outstandingVisits > 0 ? 'trend-down' : 'trend-neutral'">
+          <i class="pi" [ngClass]="payments.outstandingVisits > 0 ? 'pi-arrow-down' : 'pi-check'"></i>
+          @if (payments.outstandingVisits > 0) {
+            Checked in but never paid
+          } @else {
+            Everyone has paid
+          }
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="bottom-grid">
+
+    <!-- Revenue collected per day -->
+    <div class="chart-card">
+      <div class="chart-title">Revenue Collected
+        <span class="chart-sub">(Total {{ money(payments.totalCollected) }})</span>
+      </div>
+      @if (!hasRevenue) {
+        <div class="empty-msg">No payments collected in this period</div>
+      } @else {
+        <div class="bar-chart-wrap">
+          <div class="bar-y bar-y--money">
+            @for (y of revenueYLabels; track $index) { <span>{{ money(y) }}</span> }
+          </div>
+          <div class="bar-bars">
+            @for (d of revenueFlow; track d.day) {
+              <div class="bar-col" [title]="d.day + ': ' + money(d.amount)">
+                <span class="bar-tip">{{ d.amount > 0 ? money(d.amount) : '' }}</span>
+                <div class="bar-fill bar-fill--money" [style.height.%]="revenueBarH(d.amount)"></div>
+              </div>
+            }
+          </div>
+        </div>
+        <div class="chart-x-labels">
+          @for (d of revenueFlow; track d.day) { <span>{{ d.day }}</span> }
+        </div>
+        <div class="chart-legend"><span class="leg-box" style="background:#16a34a"></span> Collected</div>
+      }
+    </div>
+
+    <!-- How patients paid -->
+    <div class="chart-card">
+      <div class="chart-title">How Patients Paid
+        <span class="chart-sub">({{ payments.transactionCount }} transaction{{ payments.transactionCount === 1 ? '' : 's' }})</span>
+      </div>
+      @if (!hasRevenue) {
+        <div class="empty-msg">No payments collected in this period</div>
+      } @else {
+        <div class="dept-wrap">
+          <svg viewBox="0 0 120 120" width="140" height="140" class="donut-svg">
+            <circle cx="60" cy="60" r="45" fill="none" stroke="#f1f5f9" stroke-width="18"/>
+            @for (seg of methodSegs; track $index) {
+              <circle cx="60" cy="60" r="45" fill="none"
+                [attr.stroke]="seg.color" stroke-width="18"
+                [attr.stroke-dasharray]="seg.dash"
+                [attr.transform]="'rotate(' + seg.rot + ' 60 60)'"/>
+            }
+          </svg>
+          <div class="dept-legend">
+            @for (m of payments.byMethod; track m.method) {
+              <div class="dept-row">
+                <span class="dept-dot" [style.background]="methodColor(m.method)"></span>
+                <span class="dept-name">{{ m.label }}</span>
+                <span class="dept-stat">{{ money(m.amount) }} ({{ m.count }})</span>
+              </div>
+            }
+          </div>
+        </div>
+      }
+    </div>
+
+  </div>
+
+  <!-- Who paid what -->
+  <div class="chart-card">
+    <div class="chart-title">Payments by Patient
+      <span class="chart-sub">(highest first)</span>
+    </div>
+    @if (!topPayers.length) {
+      <div class="empty-msg">No payments collected in this period</div>
+    } @else {
+      <div class="payer-table-wrap">
+        <table class="payer-table">
+          <thead>
+            <tr>
+              <th class="pt-rank">#</th>
+              <th>PATIENT</th>
+              <th class="pt-id">PATIENT ID</th>
+              <th class="pt-method">METHOD</th>
+              <th class="pt-count">PAYMENTS</th>
+              <th class="pt-amt">AMOUNT</th>
+              <th class="pt-bar"></th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (p of topPayers; track p.patientId; let i = $index) {
+              <tr>
+                <td class="pt-rank">{{ i + 1 }}</td>
+                <td class="pt-name">{{ p.name }}</td>
+                <td class="pt-id">{{ p.patientCode }}</td>
+                <td class="pt-method">{{ p.methods }}</td>
+                <td class="pt-count">{{ p.payments }}</td>
+                <td class="pt-amt">{{ money(p.amount) }}</td>
+                <td class="pt-bar">
+                  <div class="pt-track"><div class="pt-fill" [style.width.%]="payerBarW(p.amount)"></div></div>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
   </div>
 
   <!-- Bottom Charts -->
@@ -213,9 +393,11 @@
 
     <!-- Consultations by Department -->
     <div class="chart-card">
-      <div class="chart-title">Consultations by Department</div>
+      <div class="chart-title">Consultations by Department
+        <span class="chart-sub">(of {{ summary.totalConsultations }})</span>
+      </div>
       @if (!departmentStats.length) {
-        <div class="empty-msg">No patient-doctor data yet</div>
+        <div class="empty-msg">No consultations in this period</div>
       } @else {
         <div class="dept-wrap">
           <svg viewBox="0 0 120 120" width="140" height="140" class="donut-svg">
@@ -242,7 +424,9 @@
 
     <!-- Peak Hours -->
     <div class="chart-card">
-      <div class="chart-title">Peak Hours <span class="chart-sub">(Patient Volume by Time)</span></div>
+      <div class="chart-title">Peak Hours
+        <span class="chart-sub">({{ totalCheckIns }} check-in{{ totalCheckIns === 1 ? '' : 's' }} by time of day)</span>
+      </div>
       <div class="line-chart-wrap">
         <div class="line-y">
           @for (y of peakYLabels; track y) { <span>{{ y }}</span> }
@@ -253,7 +437,7 @@
                       stroke-linejoin="round" stroke-linecap="round"/>
             @for (dot of peakDots; track $index) {
               <circle [attr.cx]="dot.x" [attr.cy]="dot.y" r="4" fill="#fff" stroke="#0d6e6e" stroke-width="2">
-                <title>{{ peakHours[$index].hour }}: {{ dot.val }} mins avg wait</title>
+                <title>{{ peakHours[$index].hour }}: {{ dot.val }} check-in(s)</title>
               </circle>
             }
           </svg>
@@ -262,7 +446,7 @@
       <div class="chart-x-labels">
         @for (h of peakHours; track h.hour) { <span>{{ h.hour }}</span> }
       </div>
-      <div class="chart-legend"><span class="leg-box" style="background:#0d6e6e"></span> Avg Wait (mins)</div>
+      <div class="chart-legend"><span class="leg-box" style="background:#0d6e6e"></span> Check-ins</div>
     </div>
 
   </div>
@@ -270,7 +454,13 @@
   <!-- Footer -->
   <div class="report-footer">
     <i class="pi pi-info-circle"></i>
-    Reports are based on real data for <strong>{{ dateRangeLabel }}</strong>. Department stats reflect all-time patient assignments. Use the date range selector to adjust time-series charts.
+    <p>
+      Every figure covers <strong>{{ dateRangeLabel }}</strong> and is measured from recorded
+      activity — a consultation is one visit, so the daily chart, department split, doctor
+      workload and status donut all total <strong>{{ summary.totalConsultations }}</strong>.
+      Waiting time is check-in through to the consultation being recorded. Revenue counts
+      only payments actually collected.
+    </p>
   </div>
 
   }

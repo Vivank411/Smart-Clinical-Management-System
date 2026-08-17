@@ -89,6 +89,18 @@ export class AdminDashboardComponent implements OnInit {
     return map[label] ?? '#94a3b8';
   }
 
+  /**
+   * Audit timestamps arrive as ISO-8601 with the clinic's UTC offset. Today's
+   * entries show just the clock; older ones carry the date too.
+   */
+  logTime(raw: string): string {
+    const d = new Date(raw);
+    if (isNaN(d.getTime())) return raw;
+    const clock = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+    if (d.toDateString() === new Date().toDateString()) return clock;
+    return `${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}, ${clock}`;
+  }
+
   doctorInitials(name: string): string {
     return name.replace(/^Dr\.?\s*/i, '').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
   }

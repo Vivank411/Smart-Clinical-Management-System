@@ -13,6 +13,7 @@ export interface ApiPatient {
   dob: string;
   age: number;
   mobileNumber: string | null;
+  email: string | null;
   insuranceCompany: string | null;
   addressLine1: string | null;
   addressLine2: string | null;
@@ -27,6 +28,8 @@ export interface ApiPatient {
   checkinTime: string | null;
   idProofType: string | null;
   idProofNumber: string | null;
+  /** 'Pending' until the registration fee clears; null for pre-payment records. */
+  paymentStatus: string | null;
 }
 
 export interface PatientCreate {
@@ -36,6 +39,7 @@ export interface PatientCreate {
   dob: string;
   age: number;
   mobileNumber: string;
+  email?: string;
   insuranceCompany?: string;
   medicalHistory?: string;
   allergies?: string;
@@ -57,6 +61,7 @@ export interface PatientUpdate {
   gender?: string;
   dob?: string;
   age?: number;
+  email?: string;
   insuranceCompany?: string;
   addressLine1?: string;
   addressLine2?: string;
@@ -171,6 +176,52 @@ export interface PrescriptionCreate {
   notes?: string;
 }
 
+// ── Payments (counter collection) ────────────────────────────────────────────
+
+export type PaymentMethod = 'qr' | 'card' | 'cash';
+
+export interface PaymentConfig {
+  amount: string;
+  currency: string;
+  purpose: string;
+  /** The clinic's uploaded QR, as a data URL. */
+  qrImage?: string | null;
+  qrLabel?: string | null;
+  qrConfigured: boolean;
+}
+
+export interface PaymentQrUpdate {
+  image?: string | null;
+  label?: string | null;
+}
+
+export interface PaymentConfirmRequest {
+  collectedBy?: string;
+  /** UPI UTR, or the approval code off the card-machine receipt. */
+  reference?: string;
+  /** Card only. Last four digits — never the full number. */
+  cardLast4?: string;
+  notes?: string;
+}
+
+export interface PaymentStatus {
+  txnid: string;
+  status: 'Pending' | 'Success' | 'Cancelled';
+  amount: string;
+  currency: string;
+  method: PaymentMethod;
+  purpose?: string | null;
+  patientId: number;
+  patientName: string;
+  patientCode: string;
+  queueToken?: string | null;
+  reference?: string | null;
+  cardLast4?: string | null;
+  collectedBy?: string | null;
+  notes?: string | null;
+  completedAt?: string | null;
+}
+
 // ── Clinical safety check ────────────────────────────────────────────────────
 
 export interface SafetyMedicineItem {
@@ -234,6 +285,23 @@ export interface PrescriptionResponse {
   doctorName: string | null;
   prescriptionDate: string;
   notes: string | null;
+  sentEmailAt?: string | null;
+  sentWhatsappAt?: string | null;
+}
+
+export interface PrescriptionSendRequest {
+  channel: 'email' | 'whatsapp';
+  email?: string;
+  mobile?: string;
+}
+
+export interface PrescriptionSendResult {
+  sent: boolean;
+  channel: string;
+  target: string;
+  message: string;
+  /** WhatsApp has no server-side send path — the browser opens this instead. */
+  whatsappUrl?: string | null;
 }
 
 export interface MedicationResponse {
@@ -338,13 +406,51 @@ export interface DoctorUpdate {
 
 export interface WaitingTimeDay { day: string; mins: number; }
 export interface DepartmentStat { department: string; count: number; percentage: number; }
-export interface PeakHour { hour: string; mins: number; }
+export interface PeakHour { hour: string; count: number; }
 export interface WeeklySummary {
-  totalPatients: number; totalConsultations: number;
+  /** Distinct patients a doctor consulted. */
+  totalPatients: number;
+  /** Distinct patients who arrived at the desk. Always >= totalPatients. */
+  patientsCheckedIn: number;
+  totalConsultations: number;
   avgWaitingTime: number; cancelledConsultations: number;
-  patientsChange: number; consultationsChange: number;
+  /** null when the previous window had no activity to compare against. */
+  patientsChange: number | null;
+  consultationsChange: number | null;
   waitingTimeChange: number; cancelledChange: number;
 }
+export interface RevenueDay { day: string; amount: number; }
+
+export interface PaymentMethodStat {
+  method: string;
+  label: string;
+  count: number;
+  amount: number;
+  percentage: number;
+}
+
+export interface PaymentSummary {
+  totalCollected: number;
+  transactionCount: number;
+  payingPatients: number;
+  averagePerPatient: number;
+  /** null when nothing was collected in the previous window. */
+  collectedChange: number | null;
+  /** Visits checked in during the window that were never paid for. */
+  outstandingVisits: number;
+  byMethod: PaymentMethodStat[];
+}
+
+export interface TopPayer {
+  patientId: number;
+  patientCode: string;
+  name: string;
+  amount: number;
+  payments: number;
+  methods: string;
+  maxAmount: number;
+}
+
 export interface AuditLogFull {
   id: number; time: string; user: string; userEmail: string;
   action: string; module: string; details: string;
@@ -468,6 +574,40 @@ export class ApiService {
     return this.http.get<PrescriptionResponse[]>(`${this.base}/prescriptions/patient/${patientId}`);
   }
 
+  sendPrescription(id: number, data: PrescriptionSendRequest): Observable<PrescriptionSendResult> {
+    return this.http.post<PrescriptionSendResult>(`${this.base}/prescriptions/${id}/send`, data);
+  }
+
+  // Payments
+  getPaymentConfig(): Observable<PaymentConfig> {
+    return this.http.get<PaymentConfig>(`${this.base}/payments/config`);
+  }
+
+  updatePaymentQr(data: PaymentQrUpdate): Observable<PaymentConfig> {
+    return this.http.put<PaymentConfig>(`${this.base}/payments/qr`, data);
+  }
+
+  initiatePayment(patientId: number, method: PaymentMethod): Observable<PaymentStatus> {
+    return this.http.post<PaymentStatus>(`${this.base}/payments/initiate`, { patientId, method });
+  }
+
+  /** Money is in hand — issues the queue token. */
+  confirmPayment(txnid: string, data: PaymentConfirmRequest): Observable<PaymentStatus> {
+    return this.http.post<PaymentStatus>(`${this.base}/payments/${txnid}/confirm`, data);
+  }
+
+  cancelPayment(txnid: string): Observable<PaymentStatus> {
+    return this.http.post<PaymentStatus>(`${this.base}/payments/${txnid}/cancel`, {});
+  }
+
+  getPaymentStatus(txnid: string): Observable<PaymentStatus> {
+    return this.http.get<PaymentStatus>(`${this.base}/payments/${txnid}`);
+  }
+
+  getPatientPayments(patientId: number): Observable<PaymentStatus[]> {
+    return this.http.get<PaymentStatus[]>(`${this.base}/payments/patient/${patientId}`);
+  }
+
   // AI consultation assist — paths sit under /consultations to match the
   // existing CloudFront behaviour for the API origin.
   analyseClinicalImage(data: ImageAnalysisRequest): Observable<ImageAnalysisResult> {
@@ -513,12 +653,14 @@ export class ApiService {
     return this.http.get<PatientFlowDay[]>(`${this.base}/admin/patient-flow`, { params: p });
   }
 
-  getConsultationStats(): Observable<ConsultationStat[]> {
-    return this.http.get<ConsultationStat[]>(`${this.base}/admin/consultation-stats`);
+  getConsultationStats(days = 7): Observable<ConsultationStat[]> {
+    const p = new HttpParams().set('days', String(days));
+    return this.http.get<ConsultationStat[]>(`${this.base}/admin/consultation-stats`, { params: p });
   }
 
-  getDoctorWorkload(): Observable<DoctorWorkloadItem[]> {
-    return this.http.get<DoctorWorkloadItem[]>(`${this.base}/admin/doctor-workload`);
+  getDoctorWorkload(days = 7): Observable<DoctorWorkloadItem[]> {
+    const p = new HttpParams().set('days', String(days));
+    return this.http.get<DoctorWorkloadItem[]>(`${this.base}/admin/doctor-workload`, { params: p });
   }
 
   getAuditLogs(): Observable<AuditLogItem[]> {
@@ -577,16 +719,34 @@ export class ApiService {
     return this.http.get<WaitingTimeDay[]>(`${this.base}/admin/waiting-time`, { params: p });
   }
 
-  getDepartmentStats(): Observable<DepartmentStat[]> {
-    return this.http.get<DepartmentStat[]>(`${this.base}/admin/department-stats`);
+  getDepartmentStats(days = 7): Observable<DepartmentStat[]> {
+    const p = new HttpParams().set('days', String(days));
+    return this.http.get<DepartmentStat[]>(`${this.base}/admin/department-stats`, { params: p });
   }
 
-  getPeakHours(): Observable<PeakHour[]> {
-    return this.http.get<PeakHour[]>(`${this.base}/admin/peak-hours`);
+  getPeakHours(days = 7): Observable<PeakHour[]> {
+    const p = new HttpParams().set('days', String(days));
+    return this.http.get<PeakHour[]>(`${this.base}/admin/peak-hours`, { params: p });
   }
 
-  getWeeklySummary(): Observable<WeeklySummary> {
-    return this.http.get<WeeklySummary>(`${this.base}/admin/weekly-summary`);
+  getWeeklySummary(days = 7): Observable<WeeklySummary> {
+    const p = new HttpParams().set('days', String(days));
+    return this.http.get<WeeklySummary>(`${this.base}/admin/weekly-summary`, { params: p });
+  }
+
+  getPaymentSummary(days = 7): Observable<PaymentSummary> {
+    const p = new HttpParams().set('days', String(days));
+    return this.http.get<PaymentSummary>(`${this.base}/admin/payment-summary`, { params: p });
+  }
+
+  getRevenueFlow(days = 7): Observable<RevenueDay[]> {
+    const p = new HttpParams().set('days', String(days));
+    return this.http.get<RevenueDay[]>(`${this.base}/admin/revenue-flow`, { params: p });
+  }
+
+  getTopPayers(days = 7, limit = 8): Observable<TopPayer[]> {
+    const p = new HttpParams().set('days', String(days)).set('limit', String(limit));
+    return this.http.get<TopPayer[]>(`${this.base}/admin/top-payers`, { params: p });
   }
 
   getAuditLogsFull(page = 1, pageSize = 10, search = '', module = '', action = '', status = ''): Observable<AuditLogsResponse> {

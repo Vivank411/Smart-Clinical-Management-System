@@ -417,6 +417,85 @@
   </main>
 </div>
 
+<!-- ── Send Prescription to Patient ──────────────────────────────────────── -->
+@if (showSendDialog) {
+  <div class="sp-overlay no-print">
+    <div class="sp-modal" role="dialog" aria-modal="true" aria-labelledby="sp-title">
+
+      <div class="sp-head">
+        <div class="sp-head-icon"><i class="pi pi-check"></i></div>
+        <div>
+          <h3 class="sp-title" id="sp-title">Prescription saved</h3>
+          <p class="sp-sub">Send a copy to {{ selectedPatient?.name }}</p>
+        </div>
+      </div>
+
+      <div class="sp-body">
+
+        <!-- Email -->
+        <div class="sp-channel">
+          <div class="sp-channel-head">
+            <span class="sp-channel-icon sp-channel-icon--mail"><i class="pi pi-envelope"></i></span>
+            <div class="sp-channel-label">
+              <p class="sp-channel-name">Email</p>
+              <p class="sp-channel-note">
+                @if (selectedPatient?.email) { On file from registration }
+                @else { No email on record — enter one to send }
+              </p>
+            </div>
+            @if (emailedAt) { <span class="sp-done"><i class="pi pi-check-circle"></i> Sent</span> }
+          </div>
+          <div class="sp-row">
+            <input class="sp-input" type="email" [(ngModel)]="sendEmail"
+                   placeholder="patient@example.com" [class.sp-input--bad]="sendEmailInvalid" />
+            <button class="sp-btn sp-btn--mail"
+                    (click)="sendVia('email')"
+                    [disabled]="sendEmailInvalid || sendingChannel !== null">
+              @if (sendingChannel === 'email') { <i class="pi pi-spin pi-spinner"></i> Sending… }
+              @else { <i class="pi pi-send"></i> Send Email }
+            </button>
+          </div>
+        </div>
+
+        <!-- WhatsApp -->
+        <div class="sp-channel">
+          <div class="sp-channel-head">
+            <span class="sp-channel-icon sp-channel-icon--wa"><i class="pi pi-whatsapp"></i></span>
+            <div class="sp-channel-label">
+              <p class="sp-channel-name">WhatsApp</p>
+              <p class="sp-channel-note">Opens WhatsApp with the prescription ready to send</p>
+            </div>
+            @if (whatsappedAt) { <span class="sp-done"><i class="pi pi-check-circle"></i> Opened</span> }
+          </div>
+          <div class="sp-row">
+            <input class="sp-input" type="tel" inputmode="numeric" [(ngModel)]="sendMobile"
+                   placeholder="10-digit mobile number" [class.sp-input--bad]="sendMobileInvalid" />
+            <button class="sp-btn sp-btn--wa"
+                    (click)="sendVia('whatsapp')"
+                    [disabled]="sendMobileInvalid || sendingChannel !== null">
+              @if (sendingChannel === 'whatsapp') { <i class="pi pi-spin pi-spinner"></i> Opening… }
+              @else { <i class="pi pi-whatsapp"></i> Send on WhatsApp }
+            </button>
+          </div>
+        </div>
+
+        @if (sendResult) {
+          <div class="sp-result" [class.sp-result--bad]="!sendResult.ok">
+            <i class="pi" [ngClass]="sendResult.ok ? 'pi-check-circle' : 'pi-exclamation-triangle'"></i>
+            <span>{{ sendResult.text }}</span>
+          </div>
+        }
+      </div>
+
+      <div class="sp-actions">
+        <button class="sp-skip" (click)="finishAfterSave()">
+          {{ emailedAt || whatsappedAt ? 'Done' : 'Skip for now' }}
+        </button>
+      </div>
+    </div>
+  </div>
+}
+
 <!-- Image Lightbox -->
 @if (zoomedImage) {
   <div class="rx-lightbox" (click)="zoomedImage = null">

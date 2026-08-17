@@ -1,5 +1,4 @@
 from contextlib import asynccontextmanager
-from datetime import date, datetime
 from fastapi import FastAPI, Depends, HTTPException, Request, status, Query
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -10,6 +9,7 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 
 import json as _json
+import os
 
 import models
 import schemas
@@ -17,8 +17,24 @@ import email_service
 import clinical_safety
 import ai_service
 import vision_service
+import analytics
+import time_utils
 from safety_seed import seed_clinical_safety, sync_patient_allergies
 from database import engine, SessionLocal, get_db
+
+# Country dialling code used to build WhatsApp links from local mobile numbers.
+CLINIC_COUNTRY_CODE = os.getenv("CLINIC_COUNTRY_CODE", "91")
+
+# One flat consultation fee for every patient.
+CONSULTATION_FEE     = os.getenv("CONSULTATION_FEE", "500")
+PAYMENT_CURRENCY     = os.getenv("PAYMENT_CURRENCY", "INR")
+CONSULTATION_PURPOSE = os.getenv("CONSULTATION_PURPOSE", "Consultation Fee")
+
+
+def _new_txnid() -> str:
+    """Counter reference for a payment. Unique, and short enough to read out."""
+    import secrets
+    return f"MCL{secrets.token_hex(5).upper()}"
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -57,7 +73,9 @@ def log_audit(
     ip    = request.client.host if request.client else "127.0.0.1"
     try:
         db.add(models.AuditLog(
-            timestamp   = datetime.now().strftime("%b %d, %Y %I:%M %p"),
+            # ISO-8601 in the clinic timezone. A host running in UTC used to
+            # stamp UTC wall-clock here, which is why audit times were off.
+            timestamp   = time_utils.now_iso(),
             user_name   = (name  or "System")[:100],
             user_email  = (email or "")[:150],
             action      = action,
@@ -71,6 +89,29 @@ def log_audit(
     except Exception as exc:
         db.rollback()
         print(f"[AuditLog] Failed to write: {exc}")
+
+
+def issue_queue_token(db: Session, patient: models.Patient) -> str:
+    """
+    Issue this visit's queue token, or return the one already issued today.
+
+    Handed out when the fee is settled, which happens after check-in — the
+    token is the patient's receipt and their place in the queue.
+
+    The sequence is clinic-wide and restarts each morning. It used to be
+    numbered per doctor and counted every token ever issued to that doctor, so
+    it never reset and drifted into the hundreds.
+    """
+    today = time_utils.today().isoformat()
+    if patient.queue_token and patient.token_issued_on == today:
+        return patient.queue_token
+
+    issued_today = db.query(models.Patient).filter(
+        models.Patient.token_issued_on == today
+    ).count()
+    patient.queue_token = f"Q-{issued_today + 1:03d}"
+    patient.token_issued_on = today
+    return patient.queue_token
 
 
 models.Base.metadata.create_all(bind=engine)
@@ -147,6 +188,34 @@ async def lifespan(app: FastAPI):
     with engine.connect() as conn:
         conn.execute(text("ALTER TABLE patients ADD COLUMN IF NOT EXISTS id_proof_type VARCHAR(50)"))
         conn.execute(text("ALTER TABLE patients ADD COLUMN IF NOT EXISTS id_proof_number VARCHAR(30)"))
+        conn.execute(text("ALTER TABLE patients ADD COLUMN IF NOT EXISTS email VARCHAR(150)"))
+        # ISO timestamps backing the analytics screens
+        conn.execute(text("ALTER TABLE patients      ADD COLUMN IF NOT EXISTS registered_at    VARCHAR(40)"))
+        conn.execute(text("ALTER TABLE patients      ADD COLUMN IF NOT EXISTS checkin_at       VARCHAR(40)"))
+        conn.execute(text("ALTER TABLE consultations ADD COLUMN IF NOT EXISTS created_at       VARCHAR(40)"))
+        conn.execute(text("ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS created_at       VARCHAR(40)"))
+        conn.execute(text("ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS sent_email_at    VARCHAR(40)"))
+        conn.execute(text("ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS sent_whatsapp_at VARCHAR(40)"))
+        # Payment gate. Deliberately no DEFAULT: patients registered before the
+        # gate existed stay NULL and are treated as already settled, so the
+        # migration cannot lock existing records out of check-in.
+        conn.execute(text("ALTER TABLE patients ADD COLUMN IF NOT EXISTS payment_status  VARCHAR(20)"))
+        conn.execute(text("ALTER TABLE patients ADD COLUMN IF NOT EXISTS token_issued_on VARCHAR(12)"))
+        conn.execute(text("ALTER TABLE payments ADD COLUMN IF NOT EXISTS method       VARCHAR(20) DEFAULT 'cash'"))
+        conn.execute(text("ALTER TABLE payments ADD COLUMN IF NOT EXISTS collected_by VARCHAR(120)"))
+        conn.execute(text("ALTER TABLE payments ADD COLUMN IF NOT EXISTS reference    VARCHAR(60)"))
+        conn.execute(text("ALTER TABLE payments ADD COLUMN IF NOT EXISTS card_last4   VARCHAR(4)"))
+        conn.execute(text("ALTER TABLE payments ADD COLUMN IF NOT EXISTS notes        VARCHAR(300)"))
+        conn.commit()
+
+        # Columns left behind by the removed gateway integration. They are no
+        # longer written, so any NOT NULL on them would break every insert.
+        for dead in ("gateway", "firstname", "email", "phone"):
+            try:
+                conn.execute(text(f"ALTER TABLE payments ALTER COLUMN {dead} DROP NOT NULL"))
+                conn.commit()
+            except Exception:
+                conn.rollback()   # column already gone, already nullable, or SQLite
         conn.execute(text("ALTER TABLE doctors ADD COLUMN IF NOT EXISTS password VARCHAR(255)"))
         conn.execute(text("ALTER TABLE doctors ADD COLUMN IF NOT EXISTS role VARCHAR(50) DEFAULT 'Doctor'"))
         conn.execute(text("ALTER TABLE doctors ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE"))
@@ -399,7 +468,6 @@ def get_auth_users(role: str = Query(default=""), db: Session = Depends(get_db))
     summary="Aggregated system statistics for admin dashboard",
 )
 def get_admin_stats(db: Session = Depends(get_db)):
-    from sqlalchemy import func
     total_doctors      = db.query(models.Doctor).count()
     total_receptionists = db.query(models.Receptionist).count()
     total_admins       = db.query(models.Admin).count()
@@ -410,7 +478,9 @@ def get_admin_stats(db: Session = Depends(get_db)):
         totalUsers=total_doctors + total_receptionists + total_admins,
         activeDoctors=active_doctors,
         totalPatients=total_patients,
-        avgWaitingTime=14,
+        # Measured over the same 7-day window the dashboard charts cover, so
+        # the tile agrees with the Reports screen instead of being a constant.
+        avgWaitingTime=analytics.average_wait(db, 7),
         consultationsTotal=total_consultations,
     )
 
@@ -421,124 +491,48 @@ def get_admin_stats(db: Session = Depends(get_db)):
     tags=["Admin"],
     summary="Consultation count per day for the last N days",
 )
-def get_patient_flow(days: int = Query(default=7, ge=7, le=30), db: Session = Depends(get_db)):
-    from datetime import timedelta
-    today = date.today()
-    result = []
-    for i in range(days - 1, -1, -1):
-        d = today - timedelta(days=i)
-        count = db.query(models.Consultation).filter(
-            models.Consultation.consultation_date == d
-        ).count()
-        label = d.strftime("%a") if days <= 7 else d.strftime("%d %b")
-        result.append(schemas.PatientFlowDay(day=label, count=count))
-    return result
+def get_patient_flow(days: int = Query(default=7, ge=1, le=90), db: Session = Depends(get_db)):
+    return [schemas.PatientFlowDay(**d) for d in analytics.patient_flow(db, days)]
 
 
 @app.get(
     "/admin/consultation-stats",
     response_model=List[schemas.ConsultationStat],
     tags=["Admin"],
-    summary="Patient status breakdown for donut chart",
+    summary="Completed vs pending consultations for the selected window",
 )
-def get_consultation_stats(db: Session = Depends(get_db)):
-    total     = db.query(models.Patient).count()
-    completed = db.query(models.Patient).filter(models.Patient.status == "Consulted").count()
-    checked   = db.query(models.Patient).filter(models.Patient.status == "Checked-In").count()
-    registered = db.query(models.Patient).filter(models.Patient.status == "Registered").count()
-    if total == 0:
-        return [
-            schemas.ConsultationStat(label="Completed", count=0, percentage=0),
-            schemas.ConsultationStat(label="Pending",   count=0, percentage=0),
-            schemas.ConsultationStat(label="Cancelled", count=0, percentage=0),
-        ]
-    pending = checked + registered
-    return [
-        schemas.ConsultationStat(label="Completed", count=completed, percentage=round(completed / total * 100, 1)),
-        schemas.ConsultationStat(label="Pending",   count=pending,   percentage=round(pending   / total * 100, 1)),
-        schemas.ConsultationStat(label="Cancelled", count=0,         percentage=0),
-    ]
+def get_consultation_stats(days: int = Query(default=7, ge=1, le=90), db: Session = Depends(get_db)):
+    return [schemas.ConsultationStat(**s) for s in analytics.consultation_stats(db, days)]
 
 
 @app.get(
     "/admin/doctor-workload",
     response_model=List[schemas.DoctorWorkloadItem],
     tags=["Admin"],
-    summary="Top doctors by assigned patient count",
+    summary="Top doctors by consultations handled in the selected window",
 )
-def get_doctor_workload(db: Session = Depends(get_db)):
-    from sqlalchemy import func
-    rows = (
-        db.query(models.Patient.doctor, func.count(models.Patient.id).label("cnt"))
-        .filter(models.Patient.doctor.isnot(None))
-        .group_by(models.Patient.doctor)
-        .order_by(func.count(models.Patient.id).desc())
-        .limit(5)
-        .all()
-    )
-    if not rows:
-        return []
-    max_cnt = rows[0].cnt
-    return [
-        schemas.DoctorWorkloadItem(name=r.doctor, count=r.cnt, maxCount=max_cnt)
-        for r in rows
-    ]
+def get_doctor_workload(days: int = Query(default=7, ge=1, le=90), db: Session = Depends(get_db)):
+    return [schemas.DoctorWorkloadItem(**w) for w in analytics.doctor_workload(db, days)]
 
 
 @app.get(
     "/admin/audit-logs",
     response_model=List[schemas.AuditLogItem],
     tags=["Admin"],
-    summary="Recent system activities derived from existing records",
+    summary="Most recent recorded system activity",
 )
 def get_audit_logs(db: Session = Depends(get_db)):
-    entries = []
-
-    # Recent prescriptions
-    for p in db.query(models.Prescription).order_by(models.Prescription.id.desc()).limit(2).all():
-        pat = db.query(models.Patient).filter(models.Patient.id == p.patient_id).first()
-        entries.append({
-            "time": str(p.prescription_date),
-            "user": p.doctor_name or "Doctor",
-            "action": "Prescription Added",
-            "module": "Consultation",
-            "details": f"Prescription #{p.id:04d} created",
-            "_sort": p.id + 30000,
-        })
-
-    # Recent consultations
-    for c in db.query(models.Consultation).order_by(models.Consultation.id.desc()).limit(3).all():
-        pat = db.query(models.Patient).filter(models.Patient.id == c.patient_id).first()
-        entries.append({
-            "time": str(c.consultation_date),
-            "user": c.doctor_name or "Doctor",
-            "action": "Consultation Added",
-            "module": "Consultation",
-            "details": f"Consultation for {pat.name if pat else 'patient'} recorded",
-            "_sort": c.id + 20000,
-        })
-
-    # Recent check-ins
-    for p in (
-        db.query(models.Patient)
-        .filter(models.Patient.checkin_time.isnot(None))
-        .order_by(models.Patient.id.desc())
-        .limit(2)
-        .all()
-    ):
-        entries.append({
-            "time": p.checkin_time or "—",
-            "user": "Receptionist",
-            "action": "Patient Check-in",
-            "module": "Queue",
-            "details": f"Patient MED-{p.id:04d} checked in",
-            "_sort": p.id + 10000,
-        })
-
-    entries.sort(key=lambda x: x["_sort"], reverse=True)
-    for e in entries:
-        e.pop("_sort", None)
-    return [schemas.AuditLogItem(**e) for e in entries[:6]]
+    logs = db.query(models.AuditLog).order_by(models.AuditLog.id.desc()).limit(6).all()
+    return [
+        schemas.AuditLogItem(
+            time=log.timestamp,
+            user=log.user_name or "System",
+            action=log.action,
+            module=log.module,
+            details=log.details or "",
+        )
+        for log in logs
+    ]
 
 
 # ── Admin User Management ─────────────────────────────────────────────────────
@@ -857,110 +851,57 @@ def delete_admin_doctor(doctor_id: int, request: Request, db: Session = Depends(
 
 
 @app.get("/admin/waiting-time", response_model=List[schemas.WaitingTimeDay], tags=["Admin"])
-def get_waiting_time(days: int = Query(default=7, ge=7, le=30), db: Session = Depends(get_db)):
-    from datetime import timedelta
-    today = date.today()
-    result = []
-    for i in range(days - 1, -1, -1):
-        d = today - timedelta(days=i)
-        count = db.query(models.Consultation).filter(
-            models.Consultation.consultation_date == d
-        ).count()
-        # Derive approximate average waiting time: each consultation adds ~2 min of queue
-        mins = round(min(45.0, max(0.0, count * 2.0 + (3.0 if count > 0 else 0.0))), 1)
-        label = d.strftime("%a") if days <= 7 else d.strftime("%d %b")
-        result.append(schemas.WaitingTimeDay(day=label, mins=mins))
-    return result
+def get_waiting_time(days: int = Query(default=7, ge=1, le=90), db: Session = Depends(get_db)):
+    return [schemas.WaitingTimeDay(**d) for d in analytics.waiting_time(db, days)]
 
 
 @app.get("/admin/department-stats", response_model=List[schemas.DepartmentStat], tags=["Admin"])
-def get_department_stats(db: Session = Depends(get_db)):
-    from sqlalchemy import func
-    rows = (
-        db.query(models.Doctor.specialization, func.count(models.Patient.id).label("cnt"))
-        .join(models.Patient, models.Doctor.name == models.Patient.doctor)
-        .group_by(models.Doctor.specialization)
-        .order_by(func.count(models.Patient.id).desc())
-        .limit(5)
-        .all()
-    )
-    if not rows:
-        return []
-    total = sum(r.cnt for r in rows)
-    if total == 0:
-        return []
-    return [
-        schemas.DepartmentStat(
-            department=r.specialization,
-            count=r.cnt,
-            percentage=round(r.cnt / total * 100, 1),
-        )
-        for r in rows
-    ]
+def get_department_stats(days: int = Query(default=7, ge=1, le=90), db: Session = Depends(get_db)):
+    return [schemas.DepartmentStat(**d) for d in analytics.department_stats(db, days)]
 
 
 @app.get("/admin/peak-hours", response_model=List[schemas.PeakHour], tags=["Admin"])
-def get_peak_hours(db: Session = Depends(get_db)):
-    from datetime import datetime as _dt
-    rows = db.query(models.Patient.checkin_time).filter(
-        models.Patient.checkin_time.isnot(None)
-    ).all()
-    hour_counts: dict = {}
-    for (t_str,) in rows:
-        try:
-            t = _dt.strptime(t_str.strip(), "%I:%M %p")
-            hour_counts[t.hour] = hour_counts.get(t.hour, 0) + 1
-        except Exception:
-            pass
-    # 2-hour buckets across typical clinic hours
-    buckets = [(8, "8 AM"), (10, "10 AM"), (12, "12 PM"), (14, "2 PM"), (16, "4 PM"), (18, "6 PM"), (20, "8 PM")]
-    result = []
-    for start_h, label in buckets:
-        count = sum(hour_counts.get(h, 0) for h in range(start_h, start_h + 2))
-        mins = round(min(45.0, max(0.0, count * 3.0)), 1)
-        result.append(schemas.PeakHour(hour=label, mins=mins))
-    return result
+def get_peak_hours(days: int = Query(default=7, ge=1, le=90), db: Session = Depends(get_db)):
+    return [schemas.PeakHour(**h) for h in analytics.peak_hours(db, days)]
 
 
 @app.get("/admin/weekly-summary", response_model=schemas.WeeklySummary, tags=["Admin"])
-def get_weekly_summary(db: Session = Depends(get_db)):
-    from datetime import timedelta
-    today = date.today()
-    week_start      = today - timedelta(days=6)
-    last_week_start = today - timedelta(days=13)
-    last_week_end   = today - timedelta(days=7)
+def get_weekly_summary(days: int = Query(default=7, ge=1, le=90), db: Session = Depends(get_db)):
+    return schemas.WeeklySummary(**analytics.summary(db, days))
 
-    total_patients      = db.query(models.Patient).count()
-    total_consultations = db.query(models.Consultation).count()
 
-    this_week_consults = db.query(models.Consultation).filter(
-        models.Consultation.consultation_date >= week_start
-    ).count()
-    last_week_consults = db.query(models.Consultation).filter(
-        models.Consultation.consultation_date >= last_week_start,
-        models.Consultation.consultation_date <= last_week_end,
-    ).count()
+@app.get(
+    "/admin/payment-summary",
+    response_model=schemas.PaymentSummary,
+    tags=["Admin"],
+    summary="Money collected in the window, split by method",
+)
+def get_payment_summary(days: int = Query(default=7, ge=1, le=90), db: Session = Depends(get_db)):
+    return schemas.PaymentSummary(**analytics.payment_summary(db, days))
 
-    consult_change = 0.0
-    if last_week_consults > 0:
-        consult_change = round((this_week_consults - last_week_consults) / last_week_consults * 100, 1)
-    elif this_week_consults > 0:
-        consult_change = 100.0
 
-    # Derive average waiting time from this week's consultation density
-    days_this_week = max(1, this_week_consults)
-    avg_wait = min(45, max(0, round(days_this_week * 2)))
+@app.get(
+    "/admin/revenue-flow",
+    response_model=List[schemas.RevenueDay],
+    tags=["Admin"],
+    summary="Amount collected per day",
+)
+def get_revenue_flow(days: int = Query(default=7, ge=1, le=90), db: Session = Depends(get_db)):
+    return [schemas.RevenueDay(**d) for d in analytics.revenue_flow(db, days)]
 
-    return schemas.WeeklySummary(
-        totalPatients=total_patients,
-        totalConsultations=total_consultations,
-        avgWaitingTime=avg_wait,
-        cancelledConsultations=0,
-        patientsChange=0.0,
-        consultationsChange=consult_change,
-        waitingTimeChange=0,
-        cancelledChange=0.0,
-    )
+
+@app.get(
+    "/admin/top-payers",
+    response_model=List[schemas.TopPayer],
+    tags=["Admin"],
+    summary="Patients ranked by amount paid in the window",
+)
+def get_top_payers(
+    days: int = Query(default=7, ge=1, le=90),
+    limit: int = Query(default=8, ge=1, le=50),
+    db: Session = Depends(get_db),
+):
+    return [schemas.TopPayer(**p) for p in analytics.top_payers(db, days, limit)]
 
 
 @app.get("/admin/audit-logs-full", response_model=schemas.AuditLogsResponse, tags=["Admin"])
@@ -1063,6 +1004,7 @@ def create_patient(patient: schemas.PatientCreate, request: Request, db: Session
         dob=patient.dob,
         age=patient.age,
         mobile_number=patient.mobileNumber,
+        email=patient.email,
         insurance_company=patient.insuranceCompany,
         address_line1=None,
         address_line2=None,
@@ -1073,6 +1015,7 @@ def create_patient(patient: schemas.PatientCreate, request: Request, db: Session
         allergies=patient.allergies,
         id_proof_type=patient.idProofType,
         id_proof_number=patient.idProofNumber,
+        registered_at=time_utils.now_iso(),
     )
     db.add(db_patient)
     db.flush()
@@ -1217,6 +1160,7 @@ def update_patient(patient_id: int, patient_data: schemas.PatientUpdate, request
         "gender": "gender",
         "dob": "dob",
         "age": "age",
+        "email": "email",
         "insuranceCompany": "insurance_company",
         "addressLine1": "address_line1",
         "addressLine2": "address_line2",
@@ -1237,19 +1181,16 @@ def update_patient(patient_id: int, patient_data: schemas.PatientUpdate, request
     if getattr(patient_data, "allergies", None) is not None:
         sync_patient_allergies(db, patient)   # keep the safety-check table in step
 
-    # Capture check-in time
-    if patient_data.status == "Checked-In" and not patient.checkin_time:
-        from datetime import datetime as _dt
-        patient.checkin_time = _dt.now().strftime("%I:%M %p")
-
-    # Auto-generate doctor-wise queue token when checking in for the first time
-    if patient_data.status == "Checked-In" and not patient.queue_token:
-        assigned_doctor = patient_data.doctor or patient.doctor
-        existing = db.query(models.Patient).filter(
-            models.Patient.doctor == assigned_doctor,
-            models.Patient.queue_token.isnot(None),
-        ).count()
-        patient.queue_token = f"Q-{existing + 1:03d}"
+    # Capture check-in time. `checkin_at` is re-stamped on every check-in so a
+    # returning patient's waiting time is measured against this visit, not the
+    # first one they ever made; `checkin_time` stays as the display label.
+    if patient_data.status == "Checked-In":
+        stamped = time_utils.now()
+        patient.checkin_at   = stamped.isoformat(timespec="seconds")
+        patient.checkin_time = time_utils.fmt_clock(stamped)
+        # No token here. Payment comes after check-in, and the token is what
+        # the patient gets in exchange for it — see _settle_payment.
+        patient.payment_status = patient.payment_status or "Pending"
 
     db.commit()
     db.refresh(patient)
@@ -1265,6 +1206,280 @@ def update_patient(patient_id: int, patient_data: schemas.PatientUpdate, request
     return schemas.PatientResponse.from_orm_patient(patient)
 
 
+# ── Payments (counter collection) ─────────────────────────────────────────────
+# All three methods settle at the desk: the patient scans the clinic's QR, taps
+# a card on the clinic's own machine, or hands over cash. The receptionist
+# confirms, and the queue token is issued at that moment.
+#
+# No card credentials pass through this system, by design. See confirm_payment.
+
+QR_IMAGE_KEY = "payment_qr_image"
+QR_LABEL_KEY = "payment_qr_label"
+
+# A QR image lives in the settings row as a data URL. 2 MB is far more than a
+# QR needs and keeps a stray photo upload from bloating the table.
+MAX_QR_IMAGE_BYTES = 2 * 1024 * 1024
+ALLOWED_QR_PREFIXES = ("data:image/png;base64,", "data:image/jpeg;base64,",
+                       "data:image/jpg;base64,", "data:image/webp;base64,")
+
+
+def _get_setting(db: Session, key: str) -> Optional[str]:
+    row = db.query(models.AppSetting).filter(models.AppSetting.key == key).first()
+    return row.value if row else None
+
+
+def _set_setting(db: Session, key: str, value: Optional[str], who: str = "") -> None:
+    row = db.query(models.AppSetting).filter(models.AppSetting.key == key).first()
+    if not row:
+        row = models.AppSetting(key=key)
+        db.add(row)
+    row.value = value
+    row.updated_at = time_utils.now_iso()
+    row.updated_by = who[:120] if who else None
+
+
+def _payment_payload(db: Session, payment: models.Payment) -> schemas.PaymentStatusResponse:
+    patient = db.query(models.Patient).filter(
+        models.Patient.id == payment.patient_id
+    ).first()
+    return schemas.PaymentStatusResponse(
+        txnid=payment.txnid,
+        status=payment.status,
+        amount=payment.amount,
+        currency=payment.currency,
+        method=payment.method,
+        purpose=payment.purpose,
+        patientId=payment.patient_id,
+        patientName=patient.name if patient else "Patient",
+        patientCode=f"MED-{payment.patient_id:04d}",
+        queueToken=payment.queue_token,
+        reference=payment.reference,
+        cardLast4=payment.card_last4,
+        collectedBy=payment.collected_by,
+        notes=payment.notes,
+        completedAt=payment.completed_at,
+    )
+
+
+def _fee_amount() -> str:
+    """The single consultation fee, formatted for display and storage."""
+    return f"{float(CONSULTATION_FEE):.2f}"
+
+
+@app.get("/payments/config", response_model=schemas.PaymentConfig, tags=["Payments"])
+def get_payment_config(db: Session = Depends(get_db)):
+    image = _get_setting(db, QR_IMAGE_KEY)
+    return schemas.PaymentConfig(
+        amount=_fee_amount(),
+        currency=PAYMENT_CURRENCY,
+        purpose=CONSULTATION_PURPOSE,
+        qrImage=image,
+        qrLabel=_get_setting(db, QR_LABEL_KEY),
+        qrConfigured=bool(image),
+    )
+
+
+@app.put(
+    "/payments/qr",
+    response_model=schemas.PaymentConfig,
+    tags=["Payments"],
+    summary="Upload or clear the clinic's payment QR image",
+)
+def update_payment_qr(
+    data: schemas.PaymentQrUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    image = (data.image or "").strip() or None
+
+    if image:
+        if not image.startswith(ALLOWED_QR_PREFIXES):
+            raise HTTPException(
+                status_code=400,
+                detail="Upload a PNG, JPG or WebP image of your QR code.",
+            )
+        # len() of the base64 text is a close enough proxy for the decoded size
+        # and avoids decoding an arbitrarily large payload just to measure it.
+        if len(image) > MAX_QR_IMAGE_BYTES:
+            raise HTTPException(
+                status_code=400,
+                detail="That image is too large. Please upload a QR image under 2 MB.",
+            )
+
+    who = request.headers.get("x-user-name", "Administrator")
+    _set_setting(db, QR_IMAGE_KEY, image, who)
+    _set_setting(db, QR_LABEL_KEY, (data.label or "").strip() or None, who)
+    db.commit()
+
+    log_audit(db, request, "Payment QR Updated", "System Settings",
+              "Payment QR image uploaded" if image else "Payment QR image removed", "edit")
+    return get_payment_config(db)
+
+
+@app.post(
+    "/payments/initiate",
+    response_model=schemas.PaymentStatusResponse,
+    tags=["Payments"],
+    summary="Open a payment for a checked-in patient",
+)
+def initiate_payment(
+    data: schemas.PaymentInitiateRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    patient = db.query(models.Patient).filter(models.Patient.id == data.patientId).first()
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    if patient.payment_status in ("Paid", "Waived"):
+        raise HTTPException(
+            status_code=409,
+            detail="This visit has already been paid for.",
+        )
+    # No QR check here: the app ships with a default QR image, and an uploaded
+    # one simply overrides it. The screen handles a missing image itself.
+
+    payment = models.Payment(
+        txnid=_new_txnid(),
+        patient_id=patient.id,
+        amount=_fee_amount(),
+        currency=PAYMENT_CURRENCY,
+        purpose=CONSULTATION_PURPOSE,
+        status="Pending",
+        method=data.method,
+        created_at=time_utils.now_iso(),
+    )
+    db.add(payment)
+    db.commit()
+    db.refresh(payment)
+
+    log_audit(db, request, "Payment Started", "Payments",
+              f"{payment.currency} {payment.amount} due from {patient.name} "
+              f"(MED-{patient.id:04d}) by {data.method} — txn {payment.txnid}", "create")
+    return _payment_payload(db, payment)
+
+
+@app.post(
+    "/payments/{txnid}/confirm",
+    response_model=schemas.PaymentStatusResponse,
+    tags=["Payments"],
+    summary="Confirm the money has been collected, and issue the queue token",
+)
+def confirm_payment(
+    txnid: str,
+    data: schemas.PaymentConfirmRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    The single point where a visit becomes paid.
+
+    Card payments are taken on the clinic's own card machine and recorded here.
+    This endpoint accepts only the last four digits and the machine's approval
+    code — never a full card number, expiry or CVV. Holding those would put the
+    clinic under PCI-DSS, and a breach of this database would then be a breach
+    of every patient's card. The last four plus the approval code are enough to
+    match a payment to a line on the bank statement, which is the only thing
+    the clinic actually needs.
+    """
+    payment = db.query(models.Payment).filter(models.Payment.txnid == txnid).first()
+    if not payment:
+        raise HTTPException(status_code=404, detail="Payment not found")
+    # Idempotent: a double-tap on a slow connection must not issue two tokens.
+    if payment.status == "Success":
+        return _payment_payload(db, payment)
+    if payment.status == "Cancelled":
+        raise HTTPException(
+            status_code=409,
+            detail="This payment was cancelled. Start a new one to collect again.",
+        )
+
+    patient = db.query(models.Patient).filter(
+        models.Patient.id == payment.patient_id
+    ).first()
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+
+    payment.reference    = data.reference
+    payment.card_last4   = data.cardLast4 if payment.method == "card" else None
+    payment.notes        = (data.notes or "").strip() or None
+    payment.collected_by = (
+        data.collectedBy or request.headers.get("x-user-name") or "Reception"
+    )[:120]
+    payment.status       = "Success"
+    payment.completed_at = time_utils.now_iso()
+
+    patient.payment_status = "Paid"
+    payment.queue_token = issue_queue_token(db, patient)
+    db.commit()
+    db.refresh(payment)
+
+    log_audit(db, request, "Payment Received", "Payments",
+              f"{payment.currency} {payment.amount} collected from {patient.name} "
+              f"(MED-{patient.id:04d}) by {payment.method} — token {payment.queue_token}, "
+              f"txn {payment.txnid}", "create")
+    return _payment_payload(db, payment)
+
+
+@app.post(
+    "/payments/{txnid}/cancel",
+    response_model=schemas.PaymentStatusResponse,
+    tags=["Payments"],
+    summary="Abandon a payment that was started but not collected",
+)
+def cancel_payment(
+    txnid: str,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    payment = db.query(models.Payment).filter(models.Payment.txnid == txnid).first()
+    if not payment:
+        raise HTTPException(status_code=404, detail="Payment not found")
+    if payment.status == "Success":
+        raise HTTPException(
+            status_code=409,
+            detail="This payment has already been collected and cannot be cancelled.",
+        )
+    if payment.status == "Cancelled":
+        return _payment_payload(db, payment)
+
+    payment.status = "Cancelled"
+    payment.completed_at = time_utils.now_iso()
+    db.commit()
+    db.refresh(payment)
+
+    log_audit(db, request, "Payment Cancelled", "Payments",
+              f"{payment.currency} {payment.amount} not collected — txn {payment.txnid}",
+              "edit")
+    return _payment_payload(db, payment)
+
+
+@app.get(
+    "/payments/{txnid}",
+    response_model=schemas.PaymentStatusResponse,
+    tags=["Payments"],
+    summary="A single payment",
+)
+def get_payment(txnid: str, db: Session = Depends(get_db)):
+    payment = db.query(models.Payment).filter(models.Payment.txnid == txnid).first()
+    if not payment:
+        raise HTTPException(status_code=404, detail="Payment not found")
+    return _payment_payload(db, payment)
+
+
+@app.get(
+    "/payments/patient/{patient_id}",
+    response_model=List[schemas.PaymentStatusResponse],
+    tags=["Payments"],
+    summary="Payments for a patient, newest first",
+)
+def get_patient_payments(patient_id: int, db: Session = Depends(get_db)):
+    rows = (
+        db.query(models.Payment)
+        .filter(models.Payment.patient_id == patient_id)
+        .order_by(models.Payment.id.desc())
+        .all()
+    )
+    return [_payment_payload(db, p) for p in rows]
 # ── Doctors ───────────────────────────────────────────────────────────────────
 
 @app.post(
@@ -1355,8 +1570,9 @@ def create_consultation(consultation: schemas.ConsultationCreate, request: Reque
     db_consult = models.Consultation(
         patient_id=consultation.patientId,
         chief_complaint=consultation.chiefComplaint,
-        consultation_date=date.today(),
+        consultation_date=time_utils.today(),
         doctor_name=consultation.doctorName,
+        created_at=time_utils.now_iso(),
     )
     db.add(db_consult)
     # Set patient status to Waiting for Prescription
@@ -1599,7 +1815,7 @@ def check_medication(payload: schemas.SafetyCheckRequest, db: Session = Depends(
         ai_explanation=ai["explanation"],
         ai_suggestion=ai["suggestion"],
         ai_model=ai["model"],
-        checked_at=datetime.now().isoformat(timespec="seconds"),
+        checked_at=time_utils.now_iso(),
     ))
     db.commit()
 
@@ -1635,8 +1851,9 @@ def create_prescription(prescription: schemas.PrescriptionCreate, request: Reque
         patient_id=prescription.patientId,
         medications=meds_json,
         doctor_name=prescription.doctorName,
-        prescription_date=date.today(),
+        prescription_date=time_utils.today(),
         notes=prescription.notes,
+        created_at=time_utils.now_iso(),
     )
     db.add(db_prescription)
     patient.status = "Completed"
@@ -1645,6 +1862,136 @@ def create_prescription(prescription: schemas.PrescriptionCreate, request: Reque
     log_audit(db, request, "Prescription Added", "Consultation",
               f"Prescription #{db_prescription.id:04d} for {patient.name} (MED-{prescription.patientId:04d}) by {prescription.doctorName or 'Doctor'}", "edit")
     return schemas.PrescriptionResponse.from_orm_prescription(db_prescription)
+
+
+def _rx_context(db: Session, prescription: models.Prescription):
+    """Shared display values for both delivery channels."""
+    patient = db.query(models.Patient).filter(
+        models.Patient.id == prescription.patient_id
+    ).first()
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    try:
+        meds = _json.loads(prescription.medications)
+    except (ValueError, TypeError):
+        meds = []
+    return patient, meds
+
+
+def _whatsapp_number(raw: Optional[str]) -> Optional[str]:
+    """
+    Normalise a stored mobile number into the international form wa.me needs.
+    Local 10-digit numbers get the configured country code prefixed.
+    """
+    digits = "".join(ch for ch in (raw or "") if ch.isdigit())
+    if not digits:
+        return None
+    if len(digits) == 10:
+        digits = f"{CLINIC_COUNTRY_CODE}{digits}"
+    return digits
+
+
+@app.post(
+    "/prescriptions/{prescription_id}/send",
+    response_model=schemas.PrescriptionSendResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Send a saved prescription to the patient by email or WhatsApp",
+    tags=["Prescriptions"],
+)
+def send_prescription(
+    prescription_id: int,
+    payload: schemas.PrescriptionSendRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    prescription = db.query(models.Prescription).filter(
+        models.Prescription.id == prescription_id
+    ).first()
+    if not prescription:
+        raise HTTPException(status_code=404, detail="Prescription not found")
+
+    patient, meds = _rx_context(db, prescription)
+    rx_id   = f"RX-{prescription.id:04d}"
+    rx_date = prescription.prescription_date.strftime("%d %B %Y")
+
+    if payload.channel == "email":
+        target = payload.email or patient.email
+        if not target:
+            raise HTTPException(
+                status_code=400,
+                detail="This patient has no email address on file. Add one to the patient record, or enter one to send to.",
+            )
+        sent = email_service.send_prescription_email(
+            to=target,
+            patient_name=patient.name,
+            patient_id=f"MED-{patient.id:04d}",
+            doctor_name=prescription.doctor_name or "Doctor",
+            rx_id=rx_id,
+            rx_date=rx_date,
+            medications=meds,
+            notes=prescription.notes or "",
+        )
+        if sent:
+            prescription.sent_email_at = time_utils.now_iso()
+            db.commit()
+        log_audit(
+            db, request, "Prescription Sent", "Consultation",
+            f"{rx_id} {'emailed to' if sent else 'could not be emailed to'} {patient.name} ({target})",
+            "export", "Success" if sent else "Failed",
+        )
+        return schemas.PrescriptionSendResponse(
+            sent=sent, channel="email", target=target,
+            message=(
+                f"Prescription emailed to {target}." if sent else
+                "Email could not be sent — the clinic's mail account is not configured. "
+                "Contact your administrator."
+            ),
+        )
+
+    # ── WhatsApp ──
+    # There is no business-API account wired up, so the server prepares the
+    # message and the browser hands it to WhatsApp for the user to send.
+    number = _whatsapp_number(payload.mobile or patient.mobile_number)
+    if not number:
+        raise HTTPException(
+            status_code=400,
+            detail="This patient has no mobile number on file.",
+        )
+
+    lines = [
+        f"*{email_service.CLINIC_NAME} — Prescription {rx_id}*",
+        "",
+        f"Patient: {patient.name} (MED-{patient.id:04d})",
+        f"Date: {rx_date}",
+        f"Prescribed by: {prescription.doctor_name or 'Doctor'}",
+        "",
+        "*Medicines*",
+    ]
+    for i, m in enumerate(meds, start=1):
+        parts = [str(m.get("dosage") or "").strip(), str(m.get("frequency") or "").strip()]
+        duration = str(m.get("duration") or "").strip()
+        if duration:
+            parts.append(f"for {duration}")
+        detail = " · ".join(p for p in parts if p)
+        lines.append(f"{i}. {m.get('name')}{f' — {detail}' if detail else ''}")
+    if prescription.notes and prescription.notes.strip():
+        lines += ["", f"*Notes:* {prescription.notes.strip()}"]
+    lines += ["", "Please follow the dosage exactly as prescribed."]
+
+    from urllib.parse import quote
+    url = f"https://wa.me/{number}?text={quote(chr(10).join(lines))}"
+
+    prescription.sent_whatsapp_at = time_utils.now_iso()
+    db.commit()
+    log_audit(
+        db, request, "Prescription Sent", "Consultation",
+        f"{rx_id} prepared for WhatsApp delivery to {patient.name} (+{number})", "export",
+    )
+    return schemas.PrescriptionSendResponse(
+        sent=True, channel="whatsapp", target=f"+{number}",
+        message=f"WhatsApp opened for +{number}. Press send in WhatsApp to deliver it.",
+        whatsappUrl=url,
+    )
 
 
 @app.get(

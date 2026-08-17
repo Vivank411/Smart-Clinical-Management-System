@@ -1,6 +1,7 @@
-import { Component } from '@angular/core';
+import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { ApiService, PaymentConfig } from '../../services/api.service';
 
 @Component({
   selector: 'app-admin-settings',
@@ -9,8 +10,10 @@ import { FormsModule } from '@angular/forms';
   templateUrl: './admin-settings.component.html',
   styleUrl: './admin-settings.component.scss',
 })
-export class AdminSettingsComponent {
+export class AdminSettingsComponent implements OnInit {
   private readonly STORAGE_KEY = 'mc_admin_settings';
+
+  ngOnInit(): void { this.loadPaymentConfig(); }
 
   activeSection = 'general';
   saveLoading   = false;
@@ -18,9 +21,24 @@ export class AdminSettingsComponent {
 
   sections = [
     { id: 'general',       icon: 'pi-cog',       label: 'General Settings' },
+    { id: 'payments',      icon: 'pi-wallet',    label: 'Payment Settings' },
     { id: 'notifications', icon: 'pi-bell',      label: 'Notification Settings' },
     { id: 'appointments',  icon: 'pi-calendar',  label: 'Appointment Settings' },
   ];
+
+  // ── Payments ───────────────────────────────────────────────────────────────
+  // The QR belongs to the clinic, not to this browser, so unlike everything
+  // else on this screen it is stored server-side.
+  paymentConfig: PaymentConfig | null = null;
+  qrPreview: string | null = null;
+  qrLabel = '';
+  qrLoading = true;
+  qrSaving = false;
+  qrError = '';
+  qrSaved = false;
+
+  /** Rejected above this — a QR needs a fraction of it, and the row holds base64. */
+  private readonly MAX_QR_BYTES = 1.5 * 1024 * 1024;
 
   // ── Option lists ───────────────────────────────────────────────────────────
   // Full 24-hour clock — clinic hours and doctor shifts can span nights.
@@ -124,7 +142,7 @@ export class AdminSettingsComponent {
   isBackingUp = false;
   backupDone  = false;
 
-  constructor() {
+  constructor(private api: ApiService) {
     this.loadSaved();
     this.general.emailVerification = true;   // enforce: always on, even if an old saved value disabled it
   }
@@ -155,6 +173,80 @@ export class AdminSettingsComponent {
     }
     this.testSmsStatus = 'sending';
     setTimeout(() => { this.testSmsStatus = 'sent'; }, 900);
+  }
+
+  // ── Payment QR ─────────────────────────────────────────────────────────────
+
+  private loadPaymentConfig(): void {
+    this.qrLoading = true;
+    this.api.getPaymentConfig().subscribe({
+      next: (c) => {
+        this.paymentConfig = c;
+        this.qrPreview = c.qrImage ?? null;
+        this.qrLabel   = c.qrLabel ?? '';
+        this.qrLoading = false;
+      },
+      error: () => {
+        this.qrError = 'Could not load the payment settings.';
+        this.qrLoading = false;
+      },
+    });
+  }
+
+  get feeLabel(): string {
+    if (!this.paymentConfig) return '';
+    const symbol = this.paymentConfig.currency === 'INR' ? '₹' : `${this.paymentConfig.currency} `;
+    return `${symbol}${this.paymentConfig.amount}`;
+  }
+
+  onQrSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file  = input.files?.[0];
+    if (!file) return;
+    this.qrError = '';
+    this.qrSaved = false;
+
+    if (!/^image\/(png|jpe?g|webp)$/.test(file.type)) {
+      this.qrError = 'Choose a PNG, JPG or WebP image of your QR code.';
+      input.value = '';
+      return;
+    }
+    if (file.size > this.MAX_QR_BYTES) {
+      this.qrError = 'That image is too large. Please use one under 1.5 MB.';
+      input.value = '';
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload  = () => { this.qrPreview = reader.result as string; };
+    reader.onerror = () => { this.qrError = 'Could not read that file.'; };
+    reader.readAsDataURL(file);
+    input.value = '';   // let the same file be re-picked after a failure
+  }
+
+  saveQr(): void {
+    if (this.qrSaving) return;
+    this.qrSaving = true;
+    this.qrError  = '';
+    this.api.updatePaymentQr({ image: this.qrPreview, label: this.qrLabel.trim() || null })
+      .subscribe({
+        next: (c) => {
+          this.paymentConfig = c;
+          this.qrSaving = false;
+          this.qrSaved  = true;
+          setTimeout(() => { this.qrSaved = false; }, 3000);
+        },
+        error: (err) => {
+          this.qrSaving = false;
+          this.qrError = err.error?.detail ?? 'Could not save the QR. Please try again.';
+        },
+      });
+  }
+
+  removeQr(): void {
+    this.qrPreview = null;
+    this.qrLabel = '';
+    this.saveQr();
   }
 
   // ── Persistence ────────────────────────────────────────────────────────────

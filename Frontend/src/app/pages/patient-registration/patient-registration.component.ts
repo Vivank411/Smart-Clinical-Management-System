@@ -12,6 +12,10 @@ import { AuthService } from '../../services/auth.service';
 import { ApiService } from '../../services/api.service';
 import { SettingsService } from '../../services/settings.service';
 
+/** Mobile numbers are stored as exactly this many digits — see backend schema. */
+const MOBILE_LENGTH = 10;
+const EMAIL_PATTERN = /^[^@\s]+@[^@\s.]+(\.[^@\s.]+)+$/;
+
 @Component({
   selector: 'app-patient-registration',
   standalone: true,
@@ -125,14 +129,27 @@ export class PatientRegistrationComponent implements OnInit {
   get lastNameInvalid():  boolean { return this.regSubmitted && !this.lastName.trim(); }
   get dobInvalid():       boolean { return this.regSubmitted && !this.dob; }
   get genderInvalid():    boolean { return this.regSubmitted && !this.gender; }
-  get mobileInvalid():    boolean { return this.regSubmitted && this.mobile.replace(/\D/g, '').length !== 10; }
+  get mobileInvalid():    boolean { return this.regSubmitted && this.mobile.length !== MOBILE_LENGTH; }
+
+  /** Incomplete but already being typed — nudged live, before Register is pressed. */
+  get mobileIncomplete(): boolean {
+    return this.mobile.length > 0 && this.mobile.length < MOBILE_LENGTH;
+  }
 
   get mobileErrorMsg(): string {
-    return !this.mobile.trim() ? 'Mobile number is required.' : 'Mobile number must be 10 digits.';
+    if (!this.mobile) return 'Mobile number is required.';
+    const missing = MOBILE_LENGTH - this.mobile.length;
+    return `Mobile number must be ${MOBILE_LENGTH} digits — ${missing} more to go.`;
+  }
+
+  get emailInvalid(): boolean {
+    // Optional field: only complain when something has actually been typed.
+    return !!this.email.trim() && !EMAIL_PATTERN.test(this.email.trim());
   }
 
   get hasMandatoryErrors(): boolean {
-    return this.firstNameInvalid || this.lastNameInvalid || this.dobInvalid || this.genderInvalid || this.mobileInvalid;
+    return this.firstNameInvalid || this.lastNameInvalid || this.dobInvalid
+        || this.genderInvalid || this.mobileInvalid;
   }
 
   private scrollToFirstError() {
@@ -195,7 +212,18 @@ export class PatientRegistrationComponent implements OnInit {
     }
   }
 
-  onMobileChange() {
+  readonly mobileLength = MOBILE_LENGTH;
+
+  /**
+   * Keeps the field to digits only and hard-stops at 10 — an 11th keystroke is
+   * discarded rather than accepted and rejected later. The filtered value is
+   * written straight back to the DOM so the extra character never appears.
+   */
+  onMobileChange(value: string) {
+    const digits = (value ?? '').replace(/\D/g, '').slice(0, MOBILE_LENGTH);
+    this.mobile = digits;
+    if (digits !== value) this.cdr.detectChanges();
+
     this.duplicateMobile = '';
     this.mobileMatchName = '';
     this.mobileMatchId = '';
@@ -203,7 +231,7 @@ export class PatientRegistrationComponent implements OnInit {
   }
 
   onMobileBlur() {
-    if (this.mobile.replace(/\D/g, '').length === 10) {
+    if (this.mobile.length === MOBILE_LENGTH) {
       this.runMobileCheck();
     }
   }
@@ -290,7 +318,8 @@ export class PatientRegistrationComponent implements OnInit {
     this.firstName = parts[0] ?? '';
     this.lastName  = parts.slice(1).join(' ');
     this.gender    = p.gender ?? '';
-    this.mobile    = p.mobileNumber ?? '';
+    this.mobile    = (p.mobileNumber ?? '').replace(/\D/g, '').slice(0, MOBILE_LENGTH);
+    this.email     = p.email ?? '';
     if (p.dob) {
       const [y, m, d] = (p.dob as string).split('-').map(Number);
       this.dob = new Date(y, m - 1, d);
@@ -331,6 +360,8 @@ export class PatientRegistrationComponent implements OnInit {
     this.regSubmitted = true;
     // Mandatory personal fields must be filled before previewing / registering
     if (this.hasMandatoryErrors) { this.scrollToFirstError(); return; }
+    // Email is optional, but a malformed one would be rejected by the API.
+    if (this.emailInvalid) { this.scrollToFirstError(); return; }
     if (this.duplicateNameDob) return;
     if (this.duplicateMobile && !this.allowDuplicateMobile) return;
     // ID proof is optional — but if a type is chosen, a valid number is required
@@ -364,7 +395,8 @@ export class PatientRegistrationComponent implements OnInit {
       gender:               this.gender,
       dob:                  dobStr,
       age:                  this.ageYears,
-      mobileNumber:         this.mobile.trim(),
+      mobileNumber:         this.mobile,
+      email:                this.email.trim() || undefined,
       insuranceCompany:     this.insuranceCompany || undefined,
       medicalHistory:       medParts.length ? medParts.join(' | ') : undefined,
       allergies:            this.allergies.length ? this.allergies.join(', ') : undefined,

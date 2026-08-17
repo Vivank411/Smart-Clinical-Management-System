@@ -38,6 +38,104 @@ def _send(to: str, subject: str, html: str) -> bool:
         return False
 
 
+def _esc(value) -> str:
+    """Patient/medicine names go into an HTML body — escape them."""
+    from html import escape
+    return escape(str(value or ""))
+
+
+def send_prescription_email(
+    to: str,
+    patient_name: str,
+    patient_id: str,
+    doctor_name: str,
+    rx_id: str,
+    rx_date: str,
+    medications: list,
+    notes: str = "",
+) -> bool:
+    """Send the patient a readable copy of their prescription."""
+    subject = f"{CLINIC_NAME} — Your Prescription ({rx_id})"
+
+    rows = "".join(
+        f"""
+        <tr>
+          <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;">
+            <strong style="color:#1f2937;">{_esc(m.get('name'))}</strong>
+          </td>
+          <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;color:#4b5563;">{_esc(m.get('dosage'))}</td>
+          <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;color:#4b5563;">{_esc(m.get('frequency'))}</td>
+          <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;color:#4b5563;">{_esc(m.get('duration')) or '—'}</td>
+        </tr>"""
+        for m in medications
+    ) or """
+        <tr><td colspan="4" style="padding:12px;color:#6b7280;">No medicines listed.</td></tr>"""
+
+    notes_block = f"""
+    <div style="background:#fffbeb;border-left:4px solid #f59e0b;border-radius:6px;padding:14px 18px;margin:20px 0;">
+      <p style="margin:0 0 4px;color:#92400e;font-size:12px;text-transform:uppercase;letter-spacing:1px;">Doctor's Notes</p>
+      <p style="margin:0;color:#4b5563;line-height:1.6;">{_esc(notes)}</p>
+    </div>""" if notes and notes.strip() else ""
+
+    html = f"""
+<html><body style="font-family:Arial,sans-serif;max-width:640px;margin:0 auto;padding:0;">
+  <div style="background:#0d9488;padding:24px 32px;">
+    <h1 style="color:#fff;margin:0;font-size:24px;">&#x2665; {CLINIC_NAME}</h1>
+    <p style="color:#ccfbf1;margin:4px 0 0 0;font-size:14px;">Electronic Prescription</p>
+  </div>
+  <div style="padding:32px;background:#f9fafb;border:1px solid #e5e7eb;border-top:none;">
+    <h2 style="color:#1f2937;margin-top:0;">Hello {_esc(patient_name)},</h2>
+    <p style="color:#4b5563;line-height:1.6;">
+      Here is the prescription issued during your visit. Please follow the dosage
+      and duration exactly as written.
+    </p>
+
+    <table style="width:100%;border-collapse:collapse;margin:20px 0;background:#fff;border:1px solid #e5e7eb;border-radius:8px;">
+      <tr>
+        <td style="padding:8px 12px;color:#6b7280;font-size:13px;width:140px;">Patient ID</td>
+        <td style="padding:8px 12px;font-weight:600;color:#1f2937;">{_esc(patient_id)}</td>
+      </tr>
+      <tr>
+        <td style="padding:8px 12px;color:#6b7280;font-size:13px;">Prescription</td>
+        <td style="padding:8px 12px;font-weight:600;color:#1f2937;">{_esc(rx_id)}</td>
+      </tr>
+      <tr>
+        <td style="padding:8px 12px;color:#6b7280;font-size:13px;">Date</td>
+        <td style="padding:8px 12px;font-weight:600;color:#1f2937;">{_esc(rx_date)}</td>
+      </tr>
+      <tr>
+        <td style="padding:8px 12px;color:#6b7280;font-size:13px;">Prescribed by</td>
+        <td style="padding:8px 12px;font-weight:600;color:#1f2937;">{_esc(doctor_name)}</td>
+      </tr>
+    </table>
+
+    <table style="width:100%;border-collapse:collapse;background:#fff;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">
+      <thead>
+        <tr style="background:#f0fdfa;">
+          <th style="padding:10px 12px;text-align:left;font-size:12px;color:#0f766e;text-transform:uppercase;letter-spacing:1px;">Medicine</th>
+          <th style="padding:10px 12px;text-align:left;font-size:12px;color:#0f766e;text-transform:uppercase;letter-spacing:1px;">Dosage</th>
+          <th style="padding:10px 12px;text-align:left;font-size:12px;color:#0f766e;text-transform:uppercase;letter-spacing:1px;">Frequency</th>
+          <th style="padding:10px 12px;text-align:left;font-size:12px;color:#0f766e;text-transform:uppercase;letter-spacing:1px;">Duration</th>
+        </tr>
+      </thead>
+      <tbody>{rows}</tbody>
+    </table>
+    {notes_block}
+    <p style="color:#dc2626;font-weight:600;font-size:13px;">
+      &#9888;&nbsp; Do not alter the dosage without consulting your doctor. Contact the
+      clinic immediately if you experience an adverse reaction.
+    </p>
+    <p style="color:#6b7280;font-size:13px;">
+      This is an automated message — please do not reply to this email.
+    </p>
+  </div>
+  <div style="padding:16px;text-align:center;color:#9ca3af;font-size:12px;">
+    &copy; {CLINIC_NAME} Healthcare Management System
+  </div>
+</body></html>"""
+    return _send(to, subject, html)
+
+
 def send_welcome_email(to: str, name: str, temp_pw: str, role: str) -> bool:
     subject = f"Welcome to {CLINIC_NAME} — Your Login Credentials"
     html = f"""

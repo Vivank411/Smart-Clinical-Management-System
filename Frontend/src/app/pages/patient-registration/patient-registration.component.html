@@ -105,9 +105,21 @@
         </div>
         <div class="field" [class.invalid]="mobileInvalid">
           <label>Mobile Number <span class="req">*</span></label>
-          <input pInputText [(ngModel)]="mobile" placeholder="Enter mobile number"
-                 (ngModelChange)="onMobileChange()" (blur)="onMobileBlur()" />
-          @if (mobileInvalid) { <p class="field-error"><i class="pi pi-exclamation-circle"></i> {{ mobileErrorMsg }}</p> }
+          <div class="mobile-input-wrap">
+            <input pInputText [ngModel]="mobile" placeholder="Enter 10-digit mobile number"
+                   (ngModelChange)="onMobileChange($event)" (blur)="onMobileBlur()"
+                   type="tel" inputmode="numeric" autocomplete="tel"
+                   [maxlength]="mobileLength" />
+            <span class="mobile-count"
+                  [class.mobile-count--done]="mobile.length === mobileLength">
+              {{ mobile.length }}/{{ mobileLength }}
+            </span>
+          </div>
+          @if (mobileInvalid) {
+            <p class="field-error"><i class="pi pi-exclamation-circle"></i> {{ mobileErrorMsg }}</p>
+          } @else if (mobileIncomplete) {
+            <p class="field-hint"><i class="pi pi-info-circle"></i> {{ mobileErrorMsg }}</p>
+          }
           @if (duplicateMobile) {
             <div class="dup-warn">
               <div class="dup-warn-msg">
@@ -152,9 +164,15 @@
       </div>
 
       <div class="form-grid-2">
-        <div class="field">
-          <label>Email</label>
-          <input pInputText [(ngModel)]="email" type="email" placeholder="Enter email address" />
+        <div class="field" [class.invalid]="emailInvalid">
+          <label>Email <span class="opt-label">(Optional)</span></label>
+          <input pInputText [(ngModel)]="email" type="email" autocomplete="email"
+                 placeholder="Enter email address" />
+          @if (emailInvalid) {
+            <p class="field-error"><i class="pi pi-exclamation-circle"></i> Enter a valid email address, or leave this blank.</p>
+          } @else {
+            <p class="field-hint"><i class="pi pi-send"></i> Used to email the patient their prescription.</p>
+          }
         </div>
         <div class="field">
           <label>Address</label>
